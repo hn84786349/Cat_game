@@ -26,7 +26,7 @@ const COATS={
 const ART={};
 (function(){
 let c,K,BLINK,PAT;
-const SC=.1;
+const SC=.1,WALK_FPS=5;
 
 function fillP(p,col,k=1){c.fillStyle=cssc(col,k);c.fill(p);c.strokeStyle=cssc(col,k);c.lineWidth=2.4;c.lineJoin='round';c.stroke(p);}
 /** 部位:填色,然後在部位內疊上這個部位的花紋 */
@@ -74,7 +74,7 @@ const LEG={
   hindFar:'M556,556 L640,596 C662,640 674,690 670,740 C667,766 650,790 625,790 C590,792 580,775 600,768 C620,760 628,740 630,720 C620,680 590,640 556,604 Z',
 };
 ART.sideWalk=function(ph,tw){
-  const sw=q=>Math.sin(ph+q)*.2,bob=-Math.abs(Math.sin(ph))*6;
+  const sw=q=>Math.round(Math.sin(ph+q))*.17,bob=0;
   c.translate(0,bob);
   sideLeg(LEG.frontFar,340,570,sw(Math.PI),K.farK,'legFF');
   sideLeg(LEG.hindFar,640,570,sw(0),K.farK,'legHF');
@@ -134,7 +134,7 @@ ART.backSit=function(tw){
   c.restore();
 };
 ART.frontWalk=function(ph,tw){
-  const lift=q=>Math.max(0,Math.sin(ph+q))*26,bob=-Math.abs(Math.sin(ph))*6;
+  const lift=q=>Math.max(0,Math.round(Math.sin(ph+q)))*22,bob=0;
   c.translate(0,bob);
   c.save();c.translate(540,440);c.rotate(Math.sin(tw)*.08);c.translate(-540,-440);
   region('M526,440 C540,380 548,320 580,262 C592,242 618,250 606,272 C582,318 566,380 556,442 Z','tail',.88);
@@ -145,7 +145,7 @@ ART.frontWalk=function(ph,tw){
   frontHead(false);
 };
 ART.backWalk=function(ph,tw){
-  const lift=q=>Math.max(0,Math.sin(ph+q))*26,bob=-Math.abs(Math.sin(ph))*6;
+  const lift=q=>Math.max(0,Math.round(Math.sin(ph+q)))*22,bob=0;
   c.translate(0,bob);
   [[-1,0],[1,Math.PI]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*10},${600-l} L${505+s*52},${600-l} L${505+s*50},${780-l} C${505+s*50},${794-l} ${505+s*12},${794-l} ${505+s*12},${780-l} Z`,'legF',K.farK);});
   frontHead(true);
@@ -193,7 +193,8 @@ const PATTERNS={
 /** 入口:在 (0,0)=腳底中心畫一隻貓 */
 ART.draw=function(ctx,o){
   c=ctx;K=COATS[o.coat||'orange'];BLINK=o.blink===undefined?1:o.blink;
-  const t=o.t||0,ph=t*6,tw=t*2.4,side=o.dir==='left'||o.dir==='right';
+  // 走路只用 3 張圖、4 格循環:站姿 → 跨步 A → 站姿 → 跨步 B(每格約 0.2 秒),像精靈圖一樣切換
+  const t=o.t||0,frame=Math.floor(t*WALK_FPS)%4,ph=frame*Math.PI/2,tw=Math.floor(t*WALK_FPS)*.9,side=o.dir==='left'||o.dir==='right';
   const pat=K.pattern?PATTERNS[K.pattern]:null;PAT=pat?(side?(o.act==='sit'&&pat.sideSit?pat.sideSit:pat.side):pat.front):null;
   c.save();
   if(o.pitch>15)c.scale(1,.93);                               // 高俯角:略為壓扁
@@ -277,10 +278,10 @@ function exportSheet(key){
   const cols=8,cv=document.createElement('canvas');cv.width=cols*CELL_W;cv.height=rows.length*CELL_H;
   const c=cv.getContext('2d');
   rows.forEach((r,ri)=>{
-    const n=r.act==='walk'?8:4;
+    const n=4;   // 走路:站姿、跨步 A、站姿、跨步 B
     for(let i=0;i<n;i++){
       c.save();c.translate(i*CELL_W+CELL_W/2,ri*CELL_H+CELL_H-40);c.scale(S,S);
-      const t=r.act==='walk'?(i/8)*Math.PI*2/6:(i/4)*Math.PI*2/2.5;
+      const t=(i+.5)/5;
       drawCat(c,{dir:r.dir,act:r.act,pitch:r.pitch,t,coat:key});
       c.restore();
     }

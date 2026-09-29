@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>貓咪預覽</title>
+<style>
+  :root{--bg:#06101c;--panel:#13243a;--text:#eef4ff;--muted:#a3b8d4;--accent:#ffc940;--border:#2c4a70;--btn:#2a5a8f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;padding:18px 16px 40px}
+  h1{font-size:20px;margin:0 0 4px} h2{font-size:16px;margin:22px 0 10px;color:var(--accent)}
+  p.sub{margin:0 0 14px;color:var(--muted);font-size:14px}
+  #coats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+  button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 14px;font:inherit;cursor:pointer}
+  button.on{background:var(--btn);border-color:var(--accent)}
+  #exp{margin-top:8px}
+  .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-width:1100px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .card canvas{display:block;width:100%;height:auto}
+  .card .t{padding:7px 12px;font-size:14px}
+  .demo{max-width:420px;background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .demo canvas{display:block;width:100%;height:auto}
+  .demo .ctl{padding:10px 14px;font-size:14px;color:var(--muted)}
+  .demo input{width:100%}
+</style>
+</head>
+<body>
+<h1>貓咪預覽</h1>
+<p class="sub">鏡頭距離示範(上)與全動作預覽(下)。切換花色會同步套用。</p>
+<div id="coats"></div>
+<h2>鏡頭距離示範</h2>
+<div class="demo">
+  <canvas id="demo" width="840" height="560"></canvas>
+  <div class="ctl">
+    <input id="dist" type="range" min="0" max="100" value="100">
+    <div id="info"></div>
+    <div><button id="dir">換方向</button> <button id="act">走路/坐下</button></div>
+  </div>
+</div>
+<button id="exp">匯出目前花色的 PNG 圖集</button>
+<div id="grid"></div>
+<script src="game.js"></script>
+</body>
+</html>

@@ -129,20 +129,20 @@ function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15
 
 /* ---- ../cat/coats.js ---- */
 'use strict';
-/* 花色(扁平插畫風)。顏色都用 [r,g,b]。
-   base 主色、light 白色部位(胸口/口鼻/腳掌)、chest/muzzle/paws 是否有白色部位、
-   stripe 虎斑條紋色(有就是虎斑)、patches 三花色塊 [淺色塊, 深色塊]、eye 眼睛、nose 鼻子 */
+/* 花色(極簡扁平風:一個主色,遠側部位用同色稍深)。顏色都用 [r,g,b]。
+   base 主色、inner 耳朵內側(可省略,預設為主色稍深)、light 白色部位、chest/muzzle/paws 是否有白色部位、
+   stripe 虎斑條紋色(有就畫條紋)、patches 三花色塊 [淺色塊, 深色塊]、eye 眼睛、nose 鼻子、dark 深色毛(鬍鬚用白色) */
 const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
 const cssc=(c,k=1,a=1)=>`rgba(${Math.min(255,c[0]*k)|0},${Math.min(255,c[1]*k)|0},${Math.min(255,c[2]*k)|0},${a})`;
 const WHITE=rgb('#fbf7f2');
 const COATS={
-  orange:{name:'橘虎斑',base:rgb('#e9a462'),light:WHITE,stripe:rgb('#c9793c'),chest:true,muzzle:true,paws:true,eye:rgb('#b8c95a'),nose:rgb('#e99aa2')},
-  cream:{name:'奶油橘',base:rgb('#f3d6a8'),light:WHITE,stripe:rgb('#e0b47c'),chest:true,muzzle:true,paws:true,eye:rgb('#8cc3a0'),nose:rgb('#eea4aa')},
-  gray:{name:'灰虎斑',base:rgb('#a9adb8'),light:WHITE,stripe:rgb('#737987'),chest:true,muzzle:true,paws:true,eye:rgb('#e2c451'),nose:rgb('#e9a2ae')},
-  black:{name:'黑貓',base:rgb('#3b302d'),light:rgb('#3b302d'),eye:rgb('#c9d45a'),nose:rgb('#6e5352'),dark:true},
-  white:{name:'白貓',base:WHITE,light:WHITE,eye:rgb('#7bb5de'),nose:rgb('#eea4b0')},
-  tuxedo:{name:'賓士',base:rgb('#3b302d'),light:WHITE,chest:true,muzzle:true,paws:true,eye:rgb('#c9d45a'),nose:rgb('#eea4b0'),dark:true},
-  calico:{name:'三花',base:WHITE,light:WHITE,patches:[rgb('#c98c52'),rgb('#3b302d')],eye:rgb('#c9c35a'),nose:rgb('#eea4b0')},
+  orange:{name:'橘貓',base:rgb('#ee9a4c'),eye:rgb('#7cc14a'),nose:rgb('#d9775a')},
+  cream:{name:'奶油貓',base:rgb('#f3cf97'),eye:rgb('#7cb98e'),nose:rgb('#e39a86')},
+  gray:{name:'灰貓',base:rgb('#9aa1ad'),eye:rgb('#e0c04a'),nose:rgb('#c98a92')},
+  black:{name:'黑貓',base:rgb('#3b3332'),eye:rgb('#c9d45a'),nose:rgb('#6e5352'),dark:true},
+  white:{name:'白貓',base:rgb('#f6f1ea'),eye:rgb('#6aaede'),nose:rgb('#eaa0aa')},
+  tuxedo:{name:'賓士',base:rgb('#3b3332'),light:WHITE,chest:true,muzzle:true,paws:true,eye:rgb('#c9d45a'),nose:rgb('#e59aa6'),dark:true},
+  calico:{name:'三花',base:WHITE,light:WHITE,patches:[rgb('#e39a52'),rgb('#3b3332')],eye:rgb('#9cc05a'),nose:rgb('#e59aa6')},
 };
 
 /* ---- ../cat/art.js ---- */
@@ -161,8 +161,7 @@ function part(path,col,decor,k=1,strokeFrom){
   const p=typeof path==='string'?P(path):path;
   c.fillStyle=cssc(col,k);c.fill(p);
   if(decor){c.save();c.clip(p);decor();c.restore();}
-  c.save();if(strokeFrom!==undefined){c.beginPath();c.rect(-99,strokeFrom,198,199);c.clip();}
-  c.strokeStyle=lineOf(col,k);c.lineWidth=.55;c.lineJoin='round';c.stroke(p);c.restore();
+  c.strokeStyle=cssc(col,k);c.lineWidth=.3;c.stroke(p);            // 同色細邊只為了消除接縫,看不出輪廓
   return p;
 }
 function fillD(d,col,k=1){c.fillStyle=cssc(col,k);c.fill(P(d));}
@@ -179,6 +178,7 @@ function stripes(list,k=1){
 }
 /** 三花色塊 [x,y,rx,ry,旋轉,0=淺色塊/1=深色塊] */
 function patches(list,k=1){if(K.patches)list.forEach(([x,y,rx,ry,r,i])=>ell(x,y,rx,ry,r,K.patches[i],k));}
+function tailCol(){return K.patches?K.patches[1]:K.base.map(v=>v*.9);}
 function patchCol(i,fallback){return K.patches?K.patches[i]:fallback;}
 function white(d,k=1){if(K.chest)fillD(d,K.light,k);}
 
@@ -204,7 +204,6 @@ function eye(x,y,rx,ry,rot){
   if(BLINK<.5){c.strokeStyle=cssc([60,40,40]);c.lineWidth=.6;c.lineCap='round';c.beginPath();c.moveTo(-rx,0);c.quadraticCurveTo(0,ry*.8,rx,0);c.stroke();c.restore();return;}
   ell(0,0,rx,ry,0,K.eye);
   ell(0,0,rx*.3,ry*.85,0,[30,22,22]);
-  ell(-rx*.32,-ry*.35,rx*.22,rx*.22,0,[255,255,255]);
   c.restore();
 }
 /** 正面的頭(局部座標,中心在 0,0);back=true 是後腦勺 */
@@ -212,7 +211,7 @@ function headFront(back){
   const ear=s=>`M${-13*s},-4.5 C${-13.6*s},-12 ${-12.6*s},-18 ${-10.6*s},-21.5 C${-8.2*s},-17.5 ${-5.2*s},-13.2 ${-3.4*s},-11.3 Z`;
   const earIn=s=>`M${-11.8*s},-7 C${-12*s},-12 ${-11.3*s},-16.5 ${-10.3*s},-18.5 C${-8.6*s},-15.5 ${-6.8*s},-13 ${-5.8*s},-11.8 Z`;
   const earCol=s=>K.patches?K.patches[s<0?0:1]:K.base;
-  [-1,1].forEach(s=>{part(ear(s),earCol(s));if(!back)fillD(earIn(s),[236,170,176]);});
+  [-1,1].forEach(s=>{part(ear(s),earCol(s));if(!back)fillD(earIn(s),K.inner||earCol(s),K.inner?1:.84);});
   const hd='M0,-12.4 C8.4,-12.4 13.8,-8.4 14.4,-2.4 C15,3.8 10.4,9 0,9 C-10.4,9 -15,3.8 -14.4,-2.4 C-13.8,-8.4 -8.4,-12.4 0,-12.4 Z';
   part(hd,K.base,()=>{
     patches([[-10,-7,9,8,.3,0],[10,-8,8,7,-.3,1]]);
@@ -222,11 +221,11 @@ function headFront(back){
     if(K.chest&&!K.muzzle)0;
   });
   if(back)return;
-  eye(-5.4,-1.2,2.7,2.5);eye(5.4,-1.2,2.7,2.5);
+  eye(-5.2,-1.4,2,2);eye(5.2,-1.4,2,2);
   fillD('M-1.5,2.2 L1.5,2.2 L0,3.9 Z',K.nose);
   c.strokeStyle=cssc([70,48,46],1,.8);c.lineWidth=.5;c.lineCap='round';
   c.beginPath();c.moveTo(0,3.9);c.lineTo(0,5);c.moveTo(-2,5.8);c.quadraticCurveTo(-1,6.2,0,5);c.quadraticCurveTo(1,6.2,2,5.8);c.stroke();
-  whiskers([[4,4,15,2.6],[4,4.8,15,5.2],[4,5.6,14,7.6]]);
+  whiskers([[3.4,4,15,1.8],[3.4,4.6,15.4,5],[3.4,5.2,14,8.2]]);
 }
 /** 側面的頭(朝右,局部座標,中心在 0,0) */
 function headSide(){
@@ -238,15 +237,15 @@ function headSide(){
     if(K.muzzle)fillD('M6.8,.4 C9,-1 12,-1.4 13.2,-.6 C13.6,2.4 12,4.6 9.6,5.6 C7.2,6.2 5.8,5 5.6,3.4 C5.4,2 5.8,1 6.8,.4 Z',K.light);
   });
   part('M-7.2,-9.2 C-6.6,-13.6 -5.4,-17.4 -4,-20.2 C-1.6,-17 .4,-14 1.6,-11.2 Z',patchCol(1,K.base));              // 近側耳朵
-  fillD('M-5.9,-10.8 C-5.4,-13.8 -4.6,-16.2 -3.9,-17.6 C-2.4,-15.6 -1.2,-13.6 -.4,-11.6 Z',[236,170,176]);
-  eye(5.4,-3.6,2.2,2.3,.05);
+  fillD('M-5.9,-10.8 C-5.4,-13.8 -4.6,-16.2 -3.9,-17.6 C-2.4,-15.6 -1.2,-13.6 -.4,-11.6 Z',K.inner||K.base,K.inner?1:.84);
+  eye(5.8,-3.4,1.7,1.9,.05);
   fillD('M12.1,-2 L13.6,-1.4 L12.8,-.1 Z',K.nose);
   c.strokeStyle=cssc([70,48,46],1,.8);c.lineWidth=.5;c.lineCap='round';
   c.beginPath();c.moveTo(12.8,-.1);c.quadraticCurveTo(12.6,1.6,11,2.2);c.stroke();
-  whiskers([[9,1.2,1.5,-.4],[9,1.8,1.2,2.6],[9,2.4,2.2,5]],true);
+  whiskers([[11,.4,22,-1.2],[11,.8,21.4,1.8],[10.6,1.2,19.6,4.6],[9,1,16,4.8],[8.6,.6,17,.2]],true);
 }
 function whiskers(list,oneSide){
-  c.strokeStyle=K.dark?'rgba(255,255,255,.55)':'rgba(110,90,86,.45)';c.lineWidth=.35;c.lineCap='round';
+  c.strokeStyle=K.dark?'rgba(255,255,255,.8)':'rgba(25,20,20,.9)';c.lineWidth=.32;c.lineCap='round';
   list.forEach(([x1,y1,x2,y2])=>{
     [1,-1].forEach(s=>{if(s<0&&oneSide)return;c.beginPath();c.moveTo(s*x1,y1);c.quadraticCurveTo(s*(x1+x2)/2,(y1+y2)/2-.6,s*x2,y2);c.stroke();});
   });
@@ -257,11 +256,11 @@ ART.sideWalk=function(ph,tw){
   const bob=-Math.abs(Math.sin(ph))*.8,swing=q=>Math.sin(ph+q)*.34,lift=q=>1-.08*Math.max(0,Math.cos(ph+q));
   c.translate(0,bob);
   // 遠側的腳
-  leg(12,-23,23*lift(Math.PI),swing(Math.PI),false,.86,legStripes);
-  leg(-14,-24,24*lift(0),swing(0),true,.86,legStripes);
+  leg(12,-23,23*lift(Math.PI),swing(Math.PI),false,.84,legStripes);
+  leg(-14,-24,24*lift(0),swing(0),true,.84,legStripes);
   // 尾巴
   c.save();c.translate(-20,-33);c.rotate(Math.sin(tw)*.12);
-  part('M1,-1 C-6,-3 -11,-9 -10.6,-19 C-10.4,-24 -7,-27 -5,-26 C-3,-25 -5,-21 -5.2,-18 C-5.4,-11 -2.4,-5 2.4,3 Z',patchCol(1,K.base),()=>stripes([[-12,-8,-4,-10,1.6,.3],[-12,-14,-4,-15,1.5],[-12,-20,-4,-20,1.5],[-10,-25,-3,-24,2.2]]));
+  part('M1,-1 C-6,-3 -11,-9 -10.6,-19 C-10.4,-24 -7,-27 -5,-26 C-3,-25 -5,-21 -5.2,-18 C-5.4,-11 -2.4,-5 2.4,3 Z',tailCol(),()=>stripes([[-12,-8,-4,-10,1.6,.3],[-12,-14,-4,-15,1.5],[-12,-20,-4,-20,1.5],[-10,-25,-3,-24,2.2]]));
   c.restore();
   // 身體與脖子
   part('M-22,-30 C-24.4,-38.4 -16,-42.6 -4,-42.4 C5,-42.2 11,-42.8 15,-45 C18,-46.8 20.4,-49.6 22,-52 L31,-40 C29.4,-35 27,-28.4 22.4,-24.4 C15,-19.2 -8,-19.2 -18,-22 C-21.6,-23.6 -22.8,-26.6 -22,-30 Z',K.base,()=>{
@@ -277,7 +276,7 @@ ART.sideWalk=function(ph,tw){
 };
 ART.frontSit=function(tw){
   c.save();c.translate(12,-3);c.rotate(Math.sin(tw)*.06);
-  part('M0,-1 C8,0 14,1 15,-5 C15.6,-10 13,-13.4 10.8,-11.8 C9,-10.4 11.4,-7.6 9.6,-5 C7.6,-2.6 3,-1.8 -1,-1.6 Z',patchCol(1,K.base),()=>stripes([[4,-4,5,1,1.6],[8.6,-5,10.6,-1,1.6],[11.4,-9,15.4,-8.4,1.6]]));
+  part('M0,-1 C8,0 14,1 15,-5 C15.6,-10 13,-13.4 10.8,-11.8 C9,-10.4 11.4,-7.6 9.6,-5 C7.6,-2.6 3,-1.8 -1,-1.6 Z',tailCol(),()=>stripes([[4,-4,5,1,1.6],[8.6,-5,10.6,-1,1.6],[11.4,-9,15.4,-8.4,1.6]]));
   c.restore();
   [-1,1].forEach(s=>part(`M${s*6},-1 C${s*6},-9 ${s*11},-14.4 ${s*15.4},-13 C${s*20},-11.4 ${s*20.4},-4 ${s*18},-1 C${s*16},.4 ${s*10},.4 ${s*6},-1 Z`,K.base,()=>{patches([[s*14,-8,6,5,0,s<0?0:1]]);stripes([[s*18,-11,s*13,-8,1.5],[s*20,-6,s*15,-4,1.4]]);}));
   part('M-8.4,-44 C-13.4,-38 -17.4,-25 -17,-12 C-16.8,-4 -12,-.6 -6.4,-.6 L6.4,-.6 C12,-.6 16.8,-4 17,-12 C17.4,-25 13.4,-38 8.4,-44 Z',K.base,()=>{
@@ -297,7 +296,7 @@ ART.backSit=function(tw){
     stripes([[-10,-40,10,-40,1.8,-1.2],[-14,-32,14,-32,1.9,-1.8],[-16.4,-24,16.4,-24,1.9,-2],[-17,-16,17,-16,1.8,-2]]);
   });
   c.save();c.translate(8,-3);c.rotate(Math.sin(tw)*.05);
-  part('M0,-1 C-8,1 -18,2 -24,-1 C-27,-3 -26,-7 -23,-6.4 C-21,-6 -21.4,-3.6 -18,-3.4 C-12,-3 -5,-3.6 1,-5 Z',patchCol(1,K.base),()=>stripes([[-6,-5,-5,0,1.6],[-12,-5,-12,1,1.6],[-18,-5,-19,1,1.6],[-24,-7,-26,-2,2]]));
+  part('M0,-1 C-8,1 -18,2 -24,-1 C-27,-3 -26,-7 -23,-6.4 C-21,-6 -21.4,-3.6 -18,-3.4 C-12,-3 -5,-3.6 1,-5 Z',tailCol(),()=>stripes([[-6,-5,-5,0,1.6],[-12,-5,-12,1,1.6],[-18,-5,-19,1,1.6],[-24,-7,-26,-2,2]]));
   c.restore();
 };
 ART.sideSit=function(tw){
@@ -310,7 +309,7 @@ ART.sideSit=function(tw){
   part('M-17.6,-2 C-22.4,-8.4 -20.6,-20.4 -10.6,-22.4 C-2.2,-23.6 3,-15.4 2.2,-7.4 C1.6,-2.6 -1.6,-.4 -5.8,-.4 L-14,-.4 Z',K.base,()=>{patches([[-8,-14,8,7,0,0]]);stripes([[-15,-20,-11,-12,1.8,.5],[-8,-22,-5,-13,1.8,.3]]);});
   if(K.paws)ell(1.6,-1.6,5,1.9,0,K.light);else ell(1.6,-1.6,5,1.9,0,K.base);
   c.save();c.translate(-15,-2.4);c.rotate(Math.sin(tw)*.04);
-  part('M0,-1 C-8,-.4 -11,2.6 -4,3.6 C6,4.6 18,4 26,2.6 C29,2 29,.2 26,.4 C18,1 8,1 1,-1.4 Z',patchCol(1,K.base),()=>stripes([[4,0,4,5,1.6],[10,0,10,5,1.6],[16,0,16,5,1.6],[22,0,23,4,2]]));
+  part('M0,-1 C-8,-.4 -11,2.6 -4,3.6 C6,4.6 18,4 26,2.6 C29,2 29,.2 26,.4 C18,1 8,1 1,-1.4 Z',tailCol(),()=>stripes([[4,0,4,5,1.6],[10,0,10,5,1.6],[16,0,16,5,1.6],[22,0,23,4,2]]));
   c.restore();
   c.save();c.translate(10.4,-50.4);c.rotate(-.06);headSide();c.restore();
   leg(9.6,-28,28,0,false,1,legStripes);                                                  // 近側前腳
@@ -319,7 +318,7 @@ ART.frontWalk=function(ph,tw){
   const bob=-Math.abs(Math.sin(ph))*.8,lift=q=>Math.max(0,Math.sin(ph+q));
   c.translate(0,bob);
   c.save();c.translate(1.5,-34);c.rotate(Math.sin(tw)*.1);
-  part('M-1.4,0 C-1,-8 -.6,-18 2.4,-24 C3.6,-26.6 7,-25.6 5.4,-22.6 C3,-17.6 2.4,-9 2,1 Z',patchCol(1,K.base),()=>stripes([[-2,-6,4,-6,1.5],[-1,-12,4,-12,1.5],[0,-18,5,-18,1.5],[1,-23,7,-24,2.2]]));
+  part('M-1.4,0 C-1,-8 -.6,-18 2.4,-24 C3.6,-26.6 7,-25.6 5.4,-22.6 C3,-17.6 2.4,-9 2,1 Z',tailCol(),()=>stripes([[-2,-6,4,-6,1.5],[-1,-12,4,-12,1.5],[0,-18,5,-18,1.5],[1,-23,7,-24,2.2]]));
   c.restore();
   [-1,1].forEach(s=>leg(s*7.6,-19,19-2*lift(s>0?0:Math.PI),0,true,.86,L=>0));
   part('M-11.6,-36 C-14.6,-32 -14.6,-22 -11.4,-17.4 C-8,-15 8,-15 11.4,-17.4 C14.6,-22 14.6,-32 11.6,-36 C6.4,-40.4 -6.4,-40.4 -11.6,-36 Z',K.base,()=>{
@@ -341,7 +340,7 @@ ART.backWalk=function(ph,tw){
   });
   [-1,1].forEach(s=>{const q=s>0?Math.PI:0,l=lift(q);leg(s*6.4,-23-l*2.4,23-l*1.2,0,true,1,legStripes);});
   c.save();c.translate(0,-28);c.rotate(Math.sin(tw)*.12);
-  part('M-1.6,0 C-2.6,-10 -1.6,-22 2,-29 C3.4,-31.6 6.8,-30.6 5.4,-27.6 C2.6,-21 1.8,-10 2,0 Z',patchCol(1,K.base),()=>stripes([[-3,-6,3,-6,1.5],[-3,-12,3,-12,1.5],[-2,-18,4,-18,1.5],[0,-24,6,-24,1.5],[2,-29,7,-29,2.2]]));
+  part('M-1.6,0 C-2.6,-10 -1.6,-22 2,-29 C3.4,-31.6 6.8,-30.6 5.4,-27.6 C2.6,-21 1.8,-10 2,0 Z',tailCol(),()=>stripes([[-3,-6,3,-6,1.5],[-3,-12,3,-12,1.5],[-2,-18,4,-18,1.5],[0,-24,6,-24,1.5],[2,-29,7,-29,2.2]]));
   c.restore();
 };
 

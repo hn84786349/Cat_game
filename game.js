@@ -115,6 +115,9 @@ const CatAgent={
     }else if(a.auto){
       a.idle-=dt;
       if(a.idle<=0){
+        if(a.act==='sit'&&Math.random()<.35){                 // 坐一陣子後,有時會睡一下
+          a.act='sleep';a.dir=a.dir==='left'?'left':'right';a.idle=6+Math.random()*6;return;
+        }
         const b=scene.bounds;
         CatAgent.goTo(a,scene,b.x0+Math.random()*(b.x1-b.x0),b.d0+Math.random()*(b.d1-b.d0));
       }
@@ -256,38 +259,61 @@ ART.frontSit=function(tw){
   frontHead(false);
 };
 ART.backSit=function(tw){
-  frontHead(true);
-  region(FRONT_BODY,'bodyBack');
-  c.save();c.translate(560,790);c.rotate(Math.sin(tw)*.03);c.translate(-560,-790);
-  region('M560,788 C500,800 420,806 380,790 C356,778 366,752 390,760 C420,772 480,774 560,766 Z','tail',.9);
+  // 照參考圖:背面坐下,梨形身體,尾巴貼地往左繞
+  [-1,1].forEach(s=>region(`M${505+s*30},296 L${505+s*64},240 L${505+s*86},320 Z`,s<0?'earL':'earR'));
+  region(E(505,350,84,72),'head');
+  region('M436,400 C428,452 414,500 400,556 C380,628 370,700 384,748 C400,792 460,796 505,796 C550,796 610,792 626,748 C640,700 630,628 610,556 C596,500 582,452 574,400 Z','body');
+  c.save();c.translate(512,780);c.rotate(Math.sin(tw)*.03);c.translate(-512,-780);
+  region('M540,796 C470,800 360,802 290,798 C258,796 256,764 288,762 C360,758 450,760 530,758 C556,758 566,790 540,796 Z','tail',.9);
   c.restore();
 };
 ART.frontWalk=function(ph,tw){
-  const lift=q=>Math.max(0,Math.round(Math.sin(ph+q)))*22,bob=0;
-  c.translate(0,bob);
-  c.save();c.translate(540,440);c.rotate(Math.sin(tw)*.08);c.translate(-540,-440);
-  region('M526,440 C540,380 548,320 580,262 C592,242 618,250 606,272 C582,318 566,380 556,442 Z','tail',.88);
+  // 照參考圖:正面站立,尾巴從頭後面直直豎起
+  const lift=q=>Math.max(0,Math.round(Math.sin(ph+q)))*22;
+  c.save();c.translate(505,440);c.rotate(Math.sin(tw)*.05);c.translate(-505,-440);
+  region('M490,440 L490,186 C490,160 520,160 520,186 L520,440 Z','tail');
   c.restore();
-  [[-1,Math.PI],[1,0]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*50},${600-l} L${505+s*86},${600-l} L${505+s*84},${780-l} C${505+s*84},${794-l} ${505+s*52},${794-l} ${505+s*52},${780-l} Z`,'legH',K.farK);});
-  region('M446,400 L564,400 C592,450 598,540 584,600 C566,640 444,640 426,600 C412,540 418,450 446,400 Z','chest');
-  [[-1,0],[1,Math.PI]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*8},${560-l} L${505+s*56},${560-l} L${505+s*54},${776-l} C${505+s*54},${796-l} ${505+s*10},${796-l} ${505+s*10},${776-l} Z`,'legF');});
+  [[-1,Math.PI],[1,0]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*62},${660-l} L${505+s*84},${660-l} L${505+s*82},${780-l} C${505+s*82},${792-l} ${505+s*62},${792-l} ${505+s*62},${780-l} Z`,'legH',K.farK);});
+  region('M436,420 L574,420 C596,480 602,600 590,690 L420,690 C408,600 414,480 436,420 Z','chest');
+  [[-1,0],[1,Math.PI]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*6},${600-l} L${505+s*58},${600-l} L${505+s*56},${778-l} C${505+s*56},${796-l} ${505+s*8},${796-l} ${505+s*8},${778-l} Z`,'legF');});
   frontHead(false);
 };
+ART.sleep=function(tw){
+  // 照參考圖:側面蜷縮睡覺(朝左),呼吸時身體微微起伏
+  const br=1+Math.sin(tw*.8)*.012;
+  c.save();c.translate(600,688);c.scale(1,br);c.translate(-600,-688);
+  region('M360,420 C420,372 560,360 680,370 C780,380 812,470 810,560 C808,640 760,686 640,688 L360,688 C300,688 300,600 330,520 Z','body');
+  stroke('M540,470 C610,430 660,470 640,580',K.base,.9,4);
+  c.restore();
+  region('M440,612 C520,636 650,640 742,596 C764,586 776,606 754,620 C660,672 520,670 440,650 Z','tail',.93);
+  region(E(292,650,34,18),'paw');region(E(352,654,34,18),'paw');
+  region('M215,470 L208,410 L262,448 Z','earFar');region('M340,428 L382,382 L398,446 Z','ear');
+  fillP(new Path2D('M222,462 L218,424 L252,450 Z'),PAT&&PAT.earIn!==undefined?K.spot[PAT.earIn]:[240,170,178]);
+  fillP(new Path2D('M350,432 L378,402 L388,442 Z'),PAT&&PAT.earIn!==undefined?K.spot[PAT.earIn]:[240,170,178]);
+  region('M205,562 C200,482 250,432 330,422 C410,414 452,472 450,542 C448,602 412,642 342,652 C262,657 210,622 205,562 Z','head');
+  stroke('M268,534 Q284,548 300,534',[30,24,24],1,3.4);stroke('M352,530 Q368,544 384,530',[30,24,24],1,3.4);
+  c.fillStyle=cssc(K.nose);c.beginPath();c.moveTo(326,574);c.lineTo(344,574);c.lineTo(335,586);c.closePath();c.fill();
+  stroke('M335,586 Q330,598 318,596 M335,586 Q340,598 352,596',[40,30,30],1,2.6);
+  whiskers(['M300,590 L220,600','M300,596 L226,620','M302,602 L240,642','M370,586 L452,560','M370,592 L460,586','M368,598 L446,612']);
+};
 ART.backWalk=function(ph,tw){
-  const lift=q=>Math.max(0,Math.round(Math.sin(ph+q)))*22,bob=0;
-  c.translate(0,bob);
-  [[-1,0],[1,Math.PI]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*10},${600-l} L${505+s*52},${600-l} L${505+s*50},${780-l} C${505+s*50},${794-l} ${505+s*12},${794-l} ${505+s*12},${780-l} Z`,'legF',K.farK);});
-  frontHead(true);
-  region('M505,440 C580,440 612,500 610,570 C608,630 572,660 505,660 C438,660 402,630 400,570 C398,500 430,440 505,440 Z','rump');
-  [[-1,Math.PI],[1,0]].forEach(([s,q])=>{const l=lift(q);region(`M${505+s*14},${580-l} L${505+s*84},${580-l} C${505+s*90},${660-l} ${505+s*70},${720-l} ${505+s*66},${776-l} C${505+s*64},${796-l} ${505+s*24},${796-l} ${505+s*26},${776-l} Z`,'legH');});
-  c.save();c.translate(505,470);c.rotate(Math.sin(tw)*.1);c.translate(-505,-470);
-  region('M492,480 C500,420 540,380 600,360 C630,350 646,330 644,300 C642,280 666,276 670,296 C676,344 650,380 610,394 C560,410 530,440 522,480 Z','tail',.88);
+  // 照參考圖:背面站立,頭微微偏左,尾巴直直翹起
+  const lift=q=>Math.max(0,Math.round(Math.sin(ph+q)))*22;
+  [[470,Math.PI],[532,0]].forEach(([x,q])=>{const l=lift(q);region(`M${x-20},${640-l} L${x+20},${640-l} L${x+19},${780-l} C${x+19},${794-l} ${x-19},${794-l} ${x-19},${780-l} Z`,'legF',K.farK);});
+  region('M388,310 L396,236 L452,276 Z','earL');region('M490,272 L540,236 L550,310 Z','earR');
+  region(E(470,324,82,72),'head');
+  region('M396,410 C392,384 430,372 470,378 C520,386 590,400 618,450 C640,490 642,560 640,600 C638,650 620,668 590,670 L430,670 C396,664 380,630 380,580 C380,520 388,460 396,410 Z','body');
+  [[430,0,'legHL'],[598,Math.PI,'legHR']].forEach(([x,q,n])=>{const l=lift(q);region(`M${x-42},${600-l} L${x+40},${600-l} C${x+38},${680-l} ${x+34},${740-l} ${x+32},${780-l} C${x+32},${794-l} ${x-30},${794-l} ${x-30},${780-l} C${x-34},${720-l} ${x-40},${660-l} ${x-42},${600-l} Z`,n);});
+  c.save();c.translate(592,440);c.rotate(Math.sin(tw)*.06);c.translate(-592,-440);
+  region('M572,446 C570,386 572,322 580,270 C584,244 620,244 618,272 C616,332 612,392 612,446 Z','tail');
   c.restore();
 };
 
 /* ===== 花紋:各花色在各姿勢的色塊(圖片座標),[path, 色號] ===== */
 const PATTERNS={
   tuxedo:{
+    back:{earL:[['M0,0 L999,0 L999,999 L0,999 Z',0]],body:[['M360,380 C400,420 420,520 410,620 L360,680 Z',0]],legHL:[['M0,0 L999,0 L999,999 L0,999 Z',0]],legF:[['M0,0 L999,0 L999,999 L0,999 Z',0]],tail:[['M560,230 L640,230 L640,300 L560,300 Z',0]]},
+    sleep:{head:[['M300,540 C330,600 360,640 400,660 L200,660 L200,580 C240,580 270,560 300,540 Z',0]],paw:[['M0,0 L999,0 L999,999 L0,999 Z',0]],body:[['M300,600 C340,640 400,670 460,690 L300,690 Z',0]]},
     sideSit:{head:[['M180,330 C200,318 232,312 246,326 C240,352 248,380 268,396 L300,420 L180,420 Z',0]],
       body:[['M318,372 C340,380 360,400 372,430 C392,480 408,520 420,560 L420,640 C380,600 340,520 322,450 C312,420 310,396 318,372 Z',0]],
       legFN:[['M300,690 L460,690 L460,800 L300,800 Z',0]],paw:[['M0,0 L999,0 L999,999 L0,999 Z',0]],chin:0},
@@ -299,6 +325,8 @@ const PATTERNS={
       chest:[['M470,400 L540,400 C548,460 546,540 530,600 L480,600 C464,540 462,460 470,400 Z',0]],legF:[['M0,700 L999,700 L999,999 L0,999 Z',0]]},
   },
   cow:{
+    back:{head:[['M380,240 L560,240 L560,330 C520,320 480,330 460,350 C430,320 400,320 380,330 Z',0]],earL:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earR:[['M0,0 L999,0 L999,999 L0,999 Z',0]],body:[[E(470,490,70,60),0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',0]]},
+    sleep:{head:[['M200,420 L460,420 L460,520 C420,500 380,510 340,540 C300,500 240,500 200,520 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,body:[[E(560,450,110,70),0]],tail:[[E(740,600,40,30),0]]},
     sideSit:{head:[['M170,340 C200,320 250,300 300,280 L420,260 L420,420 L300,420 C290,380 270,340 240,326 C220,318 196,322 170,346 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,
       body:[['M470,352 C540,410 600,480 630,560 C590,580 540,560 500,520 C470,490 452,420 470,352 Z',0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',0]]},
     side:{head:[['M170,340 C200,320 250,300 300,280 L420,260 L420,420 L300,420 C290,380 270,340 240,326 C220,318 196,322 170,346 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,
@@ -307,6 +335,9 @@ const PATTERNS={
       body:[[E(600,560,40,70),0],[E(400,660,24,40),0]],headBack:[['M400,260 L610,260 L610,380 L400,380 Z',0]],bodyBack:[[E(460,520,60,50),0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',0]],rump:[[E(460,500,50,40),0]],chest:[[E(560,470,34,40),0]]},
   },
   calico:{
+    back:{earL:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earR:[['M0,0 L999,0 L999,999 L0,999 Z',0]],head:[[E(420,290,60,50),1],[E(515,280,34,44),0]],
+      body:[[E(420,520,60,86),0],[E(590,500,60,70),1],[E(540,470,20,20),0]],legHL:[[E(410,720,30,60),0]],legHR:[[E(620,620,20,40),0]],legF:[[E(470,760,30,24),1]],tail:[[E(596,290,30,60),1],[E(588,380,14,24),0]]},
+    sleep:{head:[[E(390,470,70,50),1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,body:[[E(560,430,90,60),1],[E(720,520,60,80),0],[E(500,560,40,30),1]],tail:[[E(720,606,40,26),0]]},
     sideSit:{head:[['M230,318 C260,290 300,272 340,272 L420,272 L420,420 L360,420 C350,390 340,350 300,330 C280,320 250,316 230,318 Z',1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,
       body:[[E(480,420,50,44),0],[E(590,560,50,60),1],[E(520,700,44,30),1]],legFN:[[E(410,640,20,56),1]],tail:[[E(760,748,24,16),0]]},
     side:{head:[['M230,318 C260,290 300,272 340,272 L420,272 L420,420 L360,420 C350,390 340,350 300,330 C280,320 250,316 230,318 Z',1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,
@@ -323,8 +354,8 @@ const PATTERNS={
 ART.draw=function(ctx,o){
   c=ctx;K=COATS[o.coat||'orange'];BLINK=o.blink===undefined?1:o.blink;
   // 走路只用 3 張圖、4 格循環:站姿 → 跨步 A → 站姿 → 跨步 B(每格約 0.2 秒),像精靈圖一樣切換
-  const t=o.t||0,frame=Math.floor(t*WALK_FPS)%4,ph=frame*Math.PI/2,tw=Math.floor(t*WALK_FPS)*.9,side=o.dir==='left'||o.dir==='right';
-  const pat=K.pattern?PATTERNS[K.pattern]:null;PAT=pat?(side?(o.act==='sit'&&pat.sideSit?pat.sideSit:pat.side):pat.front):null;
+  const t=o.t||0,frame=Math.floor(t*WALK_FPS)%4,ph=frame*Math.PI/2,tw=Math.floor(t*WALK_FPS)*.9,side=(o.dir==='left'||o.dir==='right')&&o.act!=='sleep';
+  const pat=K.pattern?PATTERNS[K.pattern]:null;PAT=pat?(o.act==='sleep'?(pat.sleep||null):side?(o.act==='sit'&&pat.sideSit?pat.sideSit:pat.side):(o.dir==='up'?(pat.back||null):pat.front)):null;
   c.save();
   if(o.pitch>15)c.scale(1,.93);                               // 高俯角:略為壓扁
   c.scale(SC,SC);
@@ -332,6 +363,9 @@ ART.draw=function(ctx,o){
     if(o.dir==='right')c.scale(-1,1);                         // 參考圖朝左,朝右時鏡像
     c.translate(-500,-790);
     if(o.act==='sit')ART.sideSit(tw);else ART.sideWalk(ph,tw);
+  }else if(o.act==='sleep'){
+    if(o.dir==='right')c.scale(-1,1);
+    c.translate(-505,-688);ART.sleep(t*2);
   }else{
     c.translate(-505,-800);
     if(o.act==='sit'){if(o.dir==='down')ART.frontSit(tw);else ART.backSit(tw);}
@@ -348,8 +382,10 @@ ART.draw=function(ctx,o){
 const CAT_POSES=[
   {dir:'left',act:'walk'},{dir:'right',act:'walk'},{dir:'up',act:'walk'},{dir:'down',act:'walk'},
   {dir:'left',act:'sit'},{dir:'right',act:'sit'},{dir:'up',act:'sit'},{dir:'down',act:'sit'},
+  {dir:'left',act:'sleep'},{dir:'right',act:'sleep'},
 ];
 const CAT_LABEL={left:'左',right:'右',up:'背對',down:'面對'};
+const ACT_LABEL={walk:'走路',sit:'坐下',sleep:'睡覺'};
 function drawCat(c,o){ART.draw(c,o);}
 
 /* ---- ../scenes/registry.js ---- */

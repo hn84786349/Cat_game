@@ -18,7 +18,7 @@
   .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
   .card canvas{display:block;width:100%;height:auto}
   .card .t{padding:7px 12px;font-size:14px}
-  .demo{max-width:420px;background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .demo{max-width:900px;background:var(--panel);border:1px solid var(--border);border-radius:14px;overflow:hidden}
   .demo canvas{display:block;width:100%;height:auto}
   .demo .ctl{padding:10px 14px;font-size:14px;color:var(--muted)}
   .demo input{width:100%}
@@ -26,17 +26,20 @@
 </head>
 <body>
 <h1>貓咪預覽</h1>
-<p class="sub">鏡頭距離示範(上)與全動作預覽(下)。切換花色會同步套用。</p>
+<p class="sub">場景示範(上)與全動作預覽(下)。切換花色會同步套用。</p>
 <div id="coats"></div>
-<h2>鏡頭距離示範</h2>
+<h2>場景示範</h2>
+<div id="scenes"></div>
 <div class="demo">
   <canvas id="demo" width="840" height="560"></canvas>
   <div class="ctl">
     <input id="dist" type="range" min="0" max="100" value="100">
     <div id="info"></div>
-    <div><button id="dir">換方向</button> <button id="act">走路/坐下</button></div>
+    <div>點擊地面讓貓走過去;拖曳滑桿或滾動滑鼠滾輪縮放。</div>
+    <div><button id="auto" class="on">自動漫遊:開</button></div>
   </div>
 </div>
+<h2>全動作預覽</h2>
 <button id="exp">匯出目前花色的 PNG 圖集</button>
 <div id="grid"></div>
 <script src="game.js"></script>

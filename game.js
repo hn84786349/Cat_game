@@ -16,11 +16,15 @@ const GAME_CONFIG={
     scale:{near:2.2,far:0.9},            // 貓在畫面上的縮放:近大遠小
     coats:['orange','cream','gray','black','white','tuxedo','calico'],
   },
+  view:{
+    baseScale:1.6,        // 世界單位 → 螢幕像素的基本倍率(再乘上貓的縮放曲線)
+    perspective:0.0015,   // 預設的深度透視強度;場景可用自己的 kp 覆寫
+  },
   scene:{
     // 場景是可替換的資料;每個場景宣告自己的「可放置點」,裝飾物宣告自己能放在哪種點
     types:['indoor','outdoor'],
     slotTypes:{
-      indoor:['floor','wall_mount','shelf'],
+      indoor:['floor','wall_mount','wall_window','wall_hang'],
       outdoor:['ground','tree_platform'],
     },
     indoorWalls:['back','left','right'],   // 室內只有後牆和左右牆,靠鏡頭側開放
@@ -47,6 +51,75 @@ const CameraRules={
   catScale(t,cfg=GAME_CONFIG.cat){
     const k=CameraRules.clamp01(t);
     return cfg.scale.near+(cfg.scale.far-cfg.scale.near)*k;
+  },
+};
+
+/* ---- ../engine/projection.js ---- */
+'use strict';
+/* 檢視(鏡頭)與投影。世界座標:x=左右,z=高度,d=深度(往鏡頭為正)。
+   水平角固定,只有距離 t(0=最近,1=最遠)會改變俯角與縮放。 */
+const View={
+  create(W,H){
+    const v={W,H,kp:GAME_CONFIG.view.perspective,x:0,d:0,t:1};
+    View.update(v,1,{x:0,d:0});
+    return v;
+  },
+  /** t=距離,focus=鏡頭對準的世界位置,kp=場景的透視強度(選填) */
+  update(v,t,focus,kp){
+    v.t=t;v.pitch=CameraRules.pitchForDistance(t);
+    const r=v.pitch*Math.PI/180;v.cs=Math.cos(r);v.sn=Math.sin(r);
+    v.sc=CameraRules.catScale(t)*GAME_CONFIG.view.baseScale;
+    v.x=focus.x;v.d=focus.d;if(kp!==undefined)v.kp=kp;
+    v.oy=v.H*(0.56+0.16*(1-t));   // 遠景時整個場景置中,近景時貓落在畫面下方
+  },
+  /** 深度透視:比鏡頭焦點近的東西較大,較遠的較小 */
+  f(v,d){return Math.max(.35,1+(d-v.d)*v.kp);},
+  /** 世界 → 螢幕 */
+  P(v,x,z,d){
+    const f=View.f(v,d);
+    return[v.W/2+(x-v.x)*v.sc*f,v.oy+(-z*v.cs+(d-v.d)*v.sn)*v.sc*f];
+  },
+  /** 螢幕 → 地面(z=0)的世界座標 */
+  unproject(v,sx,sy){
+    let d=v.d;
+    for(let i=0;i<10;i++)d=v.d+(sy-v.oy)/(v.sc*View.f(v,d)*v.sn);
+    return{x:v.x+(sx-v.W/2)/(v.sc*View.f(v,d)),d};
+  },
+};
+
+/* ---- ../engine/catAgent.js ---- */
+'use strict';
+/* 貓的行為(只有邏輯,不含繪製):走到目標點、閒置時坐下、可選擇自動漫遊 */
+const CatAgent={
+  create(scene){
+    return{x:scene.spawn.x,d:scene.spawn.d,dir:'down',act:'sit',tx:null,td:null,idle:1.5,speed:55,auto:true,t:0};
+  },
+  clampToBounds(scene,x,d){
+    const b=scene.bounds;
+    return{x:Math.min(b.x1,Math.max(b.x0,x)),d:Math.min(b.d1,Math.max(b.d0,d))};
+  },
+  goTo(a,scene,x,d){
+    const p=CatAgent.clampToBounds(scene,x,d);
+    a.tx=p.x;a.td=p.d;a.act='walk';
+  },
+  /** 依移動向量決定朝向 */
+  dirOf(dx,dd){
+    return Math.abs(dx)>=Math.abs(dd)*1.2?(dx<0?'left':'right'):(dd<0?'up':'down');
+  },
+  update(a,scene,dt){
+    a.t+=dt;
+    if(a.tx!==null){
+      const dx=a.tx-a.x,dd=a.td-a.d,dist=Math.hypot(dx,dd);
+      if(dist<2){a.tx=null;a.act='sit';a.idle=2+Math.random()*3;return;}
+      const st=Math.min(dist,a.speed*dt);
+      a.x+=dx/dist*st;a.d+=dd/dist*st;a.dir=CatAgent.dirOf(dx,dd);a.act='walk';
+    }else if(a.auto){
+      a.idle-=dt;
+      if(a.idle<=0){
+        const b=scene.bounds;
+        CatAgent.goTo(a,scene,b.x0+Math.random()*(b.x1-b.x0),b.d0+Math.random()*(b.d1-b.d0));
+      }
+    }
   },
 };
 
@@ -89,7 +162,7 @@ function poly(c,pts,pal,o={}){
   if(pal===PAL.o&&COAT&&COAT.patches&&(x1-x0)*(y1-y0)>800)patchFill(c,x0,y0,x1,y1,pts.length);
   if(o.deco)o.deco(c);
   const n=pts.length,cx=xs.reduce((a,b)=>a+b)/n,cy=ys.reduce((a,b)=>a+b)/n;
-  for(let i=0;i<n;i++){
+  for(let i=0;!o.noFacet&&i<n;i++){
     const a=pts[i],b=pts[(i+1)%n];
     let mx=(a[0]+b[0])/2-cx,my=(a[1]+b[1])/2-cy;const l=Math.hypot(mx,my)||1;mx/=l;my/=l;
     const k=(mx*-.5+my*-.85)-.05;
@@ -376,6 +449,307 @@ function drawCat(c,o){
   c.restore();
 }
 
+/* ---- ../scenes/registry.js ---- */
+'use strict';
+/* 場景與裝飾物的登記處。
+   場景 = 資料:room/bounds/spawn/slots(可放置點)/decor(裝飾物清單)+ 繪製函式
+   裝飾物 = DECOR[kind]:{layer:'floor'|'wall'|'prop', slotType?, depth?(item), draw(c,v,item)}
+   裝飾物可用 slot 指定放在場景的哪個可放置點,slotType 限制它能放在哪種點。 */
+const SCENES={};
+const DECOR={};
+
+/** 把裝飾物與它指定的可放置點合併成最終座標 */
+function resolveDecor(scene){
+  return scene.decor.map(it=>{
+    const s=it.slot?scene.slots.find(x=>x.id===it.slot):null;
+    return Object.assign({},s||{},it);
+  });
+}
+/** 檢查場景資料是否正確,回傳錯誤訊息陣列(空陣列 = 沒問題) */
+function validateScene(scene){
+  const errs=[];
+  scene.decor.forEach((it,i)=>{
+    const def=DECOR[it.kind];
+    if(!def){errs.push(`${scene.id}.decor[${i}]:未知的裝飾物 ${it.kind}`);return;}
+    if(it.slot){
+      const s=scene.slots.find(x=>x.id===it.slot);
+      if(!s)errs.push(`${scene.id}.decor[${i}]:找不到可放置點 ${it.slot}`);
+      else if(def.slotType&&def.slotType!==s.type)errs.push(`${scene.id}.decor[${i}]:${it.kind} 只能放在 ${def.slotType},但 ${s.id} 是 ${s.type}`);
+    }
+  });
+  return errs;
+}
+
+/* ---- ../scenes/gfx.js ---- */
+'use strict';
+/* 場景繪圖小工具:用世界座標 (x,z,d) 畫低多邊形四邊形與方塊,沿用貓咪的三色漸層加三角面明暗 */
+const SceneGfx={
+  shade(hex,k){
+    const n=parseInt(hex.slice(1),16),f=s=>Math.min(255,Math.max(0,Math.round(((n>>s)&255)*k)));
+    return'#'+[16,8,0].map(s=>f(s).toString(16).padStart(2,'0')).join('');
+  },
+  pal(hex){return[SceneGfx.shade(hex,1.06),hex,SceneGfx.shade(hex,.9)];},
+  scr(v,pts){return pts.map(([x,z,d])=>View.P(v,x,z,d));},
+  quad(c,v,pts,pal,o){poly(c,SceneGfx.scr(v,pts),pal,o);},
+  flat(c,v,pts,col){c.fillStyle=col;path(c,SceneGfx.scr(v,pts));c.fill();},
+  /** 方塊:b={x0,x1,d0,d1,z0,z1};hex 為基本色。看得到的面依鏡頭位置決定 */
+  box(c,v,b,hex,topHex){
+    const S=SceneGfx,{x0,x1,d0,d1,z0,z1}=b;
+    if(v.x<x0)S.quad(c,v,[[x0,z0,d0],[x0,z1,d0],[x0,z1,d1],[x0,z0,d1]],S.pal(S.shade(hex,.82)));
+    if(v.x>x1)S.quad(c,v,[[x1,z0,d0],[x1,z1,d0],[x1,z1,d1],[x1,z0,d1]],S.pal(S.shade(hex,.82)));
+    S.quad(c,v,[[x0,z0,d1],[x0,z1,d1],[x1,z1,d1],[x1,z0,d1]],S.pal(hex));
+    S.quad(c,v,[[x0,z1,d0],[x1,z1,d0],[x1,z1,d1],[x0,z1,d1]],S.pal(topHex||S.shade(hex,1.15)));
+  },
+  ellipse(cx,cd,z,rx,rd,n=16){
+    const pts=[];for(let i=0;i<n;i++){const a=Math.PI*2*i/n;pts.push([cx+Math.cos(a)*rx,z,cd+Math.sin(a)*rd]);}
+    return pts;
+  },
+};
+
+/* ---- ../scenes/decor.js ---- */
+'use strict';
+/* 裝飾物定義。新增裝飾物:在這裡加一筆 DECOR[kind],再放進場景的 decor 清單 */
+(function(){
+const S=SceneGfx;
+DECOR.rug={layer:'floor',slotType:'floor',draw(c,v,it){
+  S.quad(c,v,S.ellipse(it.x,it.d,.3,it.rx,it.rd),S.pal('#8c78c8'));
+  S.quad(c,v,S.ellipse(it.x,it.d,.4,it.rx*.72,it.rd*.72),S.pal('#b9a6ee'));
+  S.quad(c,v,S.ellipse(it.x,it.d,.5,it.rx*.4,it.rd*.4),S.pal('#e4d8ff'));
+}};
+DECOR.window={layer:'wall',slotType:'wall_window',draw(c,v,it){
+  const x0=it.x-it.w/2,x1=it.x+it.w/2,z0=it.z,z1=it.z+it.h,d=it.d;
+  S.quad(c,v,[[x0-5,z0-5,d],[x0-5,z1+5,d],[x1+5,z1+5,d],[x1+5,z0-5,d]],S.pal('#fff7ee'));
+  S.quad(c,v,[[x0,z0,d],[x0,z1,d],[x1,z1,d],[x1,z0,d]],['#9bd8f6','#c4ecff','#eaf8ff']);
+  S.flat(c,v,[[x0+it.w*.15,z0,d],[x0+it.w*.35,z0,d],[x0+it.w*.6,z1,d],[x0+it.w*.4,z1,d]],'rgba(255,255,255,.35)');
+  const mx=it.x,mz=(z0+z1)/2;
+  S.quad(c,v,[[mx-2,z0,d],[mx-2,z1,d],[mx+2,z1,d],[mx+2,z0,d]],S.pal('#fff7ee'));
+  S.quad(c,v,[[x0,mz-2,d],[x0,mz+2,d],[x1,mz+2,d],[x1,mz-2,d]],S.pal('#fff7ee'));
+  [[-1,x0-16,x0+10],[1,x1-10,x1+16]].forEach(([s,a,b])=>{
+    S.quad(c,v,[[a,z0-8,d+1],[a,z1+12,d+1],[b,z1+12,d+1],[b,z0-8,d+1]],S.pal('#f29aa8'));
+    S.flat(c,v,[[a+(b-a)*.35,z0-8,d+1.2],[a+(b-a)*.35,z1+12,d+1.2],[a+(b-a)*.5,z1+12,d+1.2],[a+(b-a)*.5,z0-8,d+1.2]],'rgba(120,30,60,.16)');
+  });
+  S.box(c,v,{x0:x0-10,x1:x1+10,d0:d,d1:d+9,z0:z0-10,z1:z0-5},'#fff7ee');
+  // 窗外的光照在地板上
+  S.flat(c,v,[[x0+8,0,d+6],[x1-8,0,d+6],[x1+40,0,d+90],[x0+40,0,d+90]],'rgba(255,250,210,.16)');
+}};
+DECOR.picture={layer:'wall',slotType:'wall_hang',draw(c,v,it){
+  const x0=it.x-it.w/2,x1=it.x+it.w/2,z0=it.z,z1=it.z+it.h,d=it.d;
+  S.quad(c,v,[[x0-4,z0-4,d],[x0-4,z1+4,d],[x1+4,z1+4,d],[x1+4,z0-4,d]],S.pal('#8a5a3a'));
+  S.quad(c,v,[[x0,z0,d],[x0,z1,d],[x1,z1,d],[x1,z0,d]],['#a8dcc8','#c8ecd8','#e6f8ee']);
+  S.quad(c,v,[[x0,z0,d+.5],[x0+it.w*.4,z0+it.h*.65,d+.5],[x0+it.w*.7,z0,d+.5]],S.pal('#6faa94'));
+  S.quad(c,v,[[x0+it.w*.4,z0,d+.5],[x0+it.w*.75,z0+it.h*.5,d+.5],[x1,z0,d+.5]],S.pal('#4f8f7a'));
+}};
+DECOR.wallShelf={layer:'wall',slotType:'wall_mount',draw(c,v,it){
+  const x0=it.x-it.w/2,x1=it.x+it.w/2;
+  [[x0+6],[x1-14]].forEach(([bx])=>S.quad(c,v,[[bx,it.z-14,it.d],[bx,it.z,it.d],[bx+8,it.z,it.d+12],[bx+8,it.z-3,it.d+12]],S.pal('#8a6238')));
+  S.box(c,v,{x0,x1,d0:it.d,d1:it.d+18,z0:it.z,z1:it.z+6},'#c08a52');
+}};
+DECOR.catBed={layer:'prop',slotType:'floor',depth:it=>it.d+it.dd/2,draw(c,v,it){
+  const x0=it.x-it.w/2,x1=it.x+it.w/2,d0=it.d-it.dd/2,d1=it.d+it.dd/2;
+  S.box(c,v,{x0,x1,d0,d1,z0:0,z1:14},'#ef8a7b');
+  S.quad(c,v,[[x0+7,14.5,d0+7],[x1-7,14.5,d0+7],[x1-7,14.5,d1-7],[x0+7,14.5,d1-7]],S.pal('#ffdccb'));
+  S.quad(c,v,S.ellipse(it.x,it.d,15,it.w*.22,it.dd*.22,8),S.pal('#ffeee2'));
+}};
+DECOR.bowls={layer:'prop',slotType:'floor',depth:it=>it.d+11,draw(c,v,it){
+  [[-16,'#5aa6d6','#a6d8f0'],[16,'#e88fa8','#8b5a3a']].forEach(([ox,col,fill])=>{
+    S.box(c,v,{x0:it.x+ox-11,x1:it.x+ox+11,d0:it.d-11,d1:it.d+11,z0:0,z1:9},col);
+    S.quad(c,v,[[it.x+ox-8,9.5,it.d-8],[it.x+ox+8,9.5,it.d-8],[it.x+ox+8,9.5,it.d+8],[it.x+ox-8,9.5,it.d+8]],S.pal(fill));
+  });
+}};
+DECOR.plant={layer:'prop',slotType:'floor',depth:it=>it.d+13,draw(c,v,it){
+  S.box(c,v,{x0:it.x-13,x1:it.x+13,d0:it.d-13,d1:it.d+13,z0:0,z1:26},'#c9694a');
+  const g=['#4fae5a','#63c46b','#3f9a4c','#78d47a'];
+  [[-26,60],[-14,74],[0,84],[14,72],[26,58],[-6,66],[8,62]].forEach(([dx,h],i)=>{
+    S.quad(c,v,[[it.x-5,26,it.d],[it.x+dx*.4,26+h*.55,it.d+(i%2?8:-8)],[it.x+5,26,it.d]],S.pal(g[i%4]));
+    S.quad(c,v,[[it.x-6+dx*.15,26+h*.45,it.d],[it.x+dx,26+h,it.d+(i%2?6:-6)],[it.x+6+dx*.15,26+h*.45,it.d]],S.pal(g[(i+1)%4]));
+  });
+}};
+/* ---- 室外 ---- */
+DECOR.tuft={layer:'floor',draw(c,v,it){
+  const a=View.P(v,it.x,0,it.d),k=v.sc*View.f(v,it.d);
+  c.fillStyle=it.col;
+  [[-3,-1,9],[0,0,13],[3,1,8]].forEach(([dx,sk,h])=>{
+    c.beginPath();c.moveTo(a[0]+(dx-2)*k,a[1]);c.lineTo(a[0]+(dx+sk)*k,a[1]-h*k*v.cs);c.lineTo(a[0]+(dx+2)*k,a[1]);c.closePath();c.fill();
+  });
+}};
+DECOR.flower={layer:'prop',depth:it=>it.d,draw(c,v,it){
+  const b=View.P(v,it.x,0,it.d),k=v.sc*View.f(v,it.d),top=[b[0],b[1]-it.h*v.cs*k];
+  c.strokeStyle='#3f9a4c';c.lineWidth=Math.max(1,1.4*k);c.beginPath();c.moveTo(b[0],b[1]);c.lineTo(top[0],top[1]);c.stroke();
+  const r=4.4*k;c.fillStyle=it.col;c.beginPath();
+  for(let i=0;i<10;i++){const a=Math.PI*2*i/10,rr=i%2?r*.55:r;c.lineTo(top[0]+Math.cos(a)*rr,top[1]+Math.sin(a)*rr*.85);}
+  c.closePath();c.fill();
+  c.fillStyle='#ffe066';c.beginPath();c.arc(top[0],top[1],r*.32,0,7);c.fill();
+}};
+DECOR.rock={layer:'prop',depth:it=>it.d+it.r*.5,draw(c,v,it){
+  const b=View.P(v,it.x,0,it.d),k=v.sc*View.f(v,it.d),r=it.r*k,pts=[];
+  for(let i=0;i<9;i++){const a=Math.PI*2*i/9,rr=r*(.8+.25*Math.sin(i*2.7+it.x));pts.push([b[0]+Math.cos(a)*rr*1.1,b[1]-r*.35+Math.sin(a)*rr*.62]);}
+  poly(c,pts,['#b9bec6','#9aa1ab','#7f8792']);
+}};
+})();
+
+/* ---- ../scenes/indoor.js ---- */
+'use strict';
+/* 室內:一般的小房間。只有後牆和左右牆,靠鏡頭那側開放。 */
+(function(){
+const S=SceneGfx;
+const R={x0:-210,x1:210,d0:-150,d1:150,h:190};
+let planks=null;
+function buildPlanks(){
+  const r=rng(11),out=[];
+  for(let d=R.d0;d<R.d1;d+=30){
+    let x=R.x0;
+    while(x<R.x1){
+      const len=90+r()*70,x1=Math.min(R.x1,x+len),k=.9+r()*.2;
+      out.push({x0:x,x1,d0:d,d1:d+30,pal:S.pal(S.shade('#c99a63',k))});
+      x=x1;
+    }
+  }
+  return out;
+}
+SCENES.indoor={
+  id:'indoor',name:'室內小房間',type:'indoor',kp:.0015,
+  room:R,
+  bounds:{x0:-150,x1:150,d0:-112,d1:125},   // 貓能走的範圍
+  center:{x:0,d:0},spawn:{x:0,d:40},
+  slots:[
+    {id:'window1',type:'wall_window',x:-60,z:82,d:R.d0,w:84,h:80},
+    {id:'picture1',type:'wall_hang',x:70,z:106,d:R.d0,w:52,h:40},
+    {id:'shelf1',type:'wall_mount',x:100,z:64,d:R.d0},
+    {id:'shelf2',type:'wall_mount',x:168,z:112,d:R.d0},
+    {id:'rug1',type:'floor',x:-10,d:35},
+    {id:'bed1',type:'floor',x:128,d:62},
+    {id:'bowls1',type:'floor',x:-128,d:98},
+    {id:'plant1',type:'floor',x:-176,d:-112},
+  ],
+  decor:[
+    {kind:'window',slot:'window1'},
+    {kind:'picture',slot:'picture1'},
+    {kind:'wallShelf',slot:'shelf1',w:62},
+    {kind:'wallShelf',slot:'shelf2',w:56},
+    {kind:'rug',slot:'rug1',rx:120,rd:64},
+    {kind:'catBed',slot:'bed1',w:64,dd:52},
+    {kind:'bowls',slot:'bowls1'},
+    {kind:'plant',slot:'plant1'},
+  ],
+  drawBase(c,v){
+    c.fillStyle='#241c30';c.fillRect(0,0,v.W,v.H);
+    if(!planks)planks=buildPlanks();
+    // 房間前緣以外的區域:遠景時是背景色,拉近後逐漸接成地板色,避免下方出現空洞
+    const yF=View.P(v,0,0,R.d1)[1];
+    if(yF<v.H){c.fillStyle=v.t>.5?'#241c30':'#b48653';c.fillRect(0,yF,v.W,v.H-yF);}
+    planks.forEach(p=>S.quad(c,v,[[p.x0,0,p.d0],[p.x1,0,p.d0],[p.x1,0,p.d1],[p.x0,0,p.d1]],p.pal));
+  },
+  drawWalls(c,v){
+    const H=R.h,up=['#f7ded6','#f2d2c9','#ebc7bd'],low=['#eab8aa','#e4ad9f','#dda296'];
+    const wall=(pts3,pal)=>S.quad(c,v,pts3,pal,{noFacet:true});
+    // 後牆
+    wall([[R.x0,58,R.d0],[R.x0,H,R.d0],[R.x1,H,R.d0],[R.x1,58,R.d0]],up);
+    wall([[R.x0,8,R.d0],[R.x0,58,R.d0],[R.x1,58,R.d0],[R.x1,8,R.d0]],low);
+    // 左右牆(比後牆略暗)
+    [[R.x0,.93],[R.x1,.97]].forEach(([x,k])=>{
+      const u=up.map(h=>S.shade(h,k)),l=low.map(h=>S.shade(h,k));
+      wall([[x,58,R.d0],[x,H,R.d0],[x,H,R.d1],[x,58,R.d1]],u);
+      wall([[x,8,R.d0],[x,58,R.d0],[x,58,R.d1],[x,8,R.d1]],l);
+    });
+    // 護牆板頂條與踢腳板
+    const rail=S.pal('#fff1e6');
+    wall([[R.x0,58,R.d0],[R.x0,62,R.d0],[R.x1,62,R.d0],[R.x1,58,R.d0]],rail);
+    wall([[R.x0,0,R.d0],[R.x0,8,R.d0],[R.x1,8,R.d0],[R.x1,0,R.d0]],rail);
+    [R.x0,R.x1].forEach(x=>{
+      wall([[x,58,R.d0],[x,62,R.d0],[x,62,R.d1],[x,58,R.d1]],rail);
+      wall([[x,0,R.d0],[x,8,R.d0],[x,8,R.d1],[x,0,R.d1]],rail);
+    });
+  },
+};
+})();
+
+/* ---- ../scenes/outdoor.js ---- */
+'use strict';
+/* 室外:一片草皮。天空、遠山、格狀低多邊形草地,點綴草叢、小花與石頭。 */
+(function(){
+const S=SceneGfx;
+const G={x0:-400,x1:400,d0:-300,d1:300};
+let tiles=null,hills=null;
+function buildTiles(){
+  const r=rng(5),out=[],T=50,greens=['#86d05f','#7bc659','#90d868','#82cc5c'];
+  for(let d=G.d0;d<G.d1;d+=T)for(let x=G.x0;x<G.x1;x+=T){
+    const a=greens[Math.floor(r()*4)],b=greens[Math.floor(r()*4)];
+    out.push({t1:[[x,0,d],[x+T,0,d],[x+T,0,d+T]],t2:[[x,0,d],[x+T,0,d+T],[x,0,d+T]],a,b});
+  }
+  return out;
+}
+function buildDecor(){
+  const r=rng(9),out=[];
+  const cols=['#ff8fb3','#ffd45a','#ffffff','#b58cff'];
+  for(let i=0;i<120;i++)out.push({kind:'tuft',x:G.x0+r()*800,d:G.d0+r()*600,col:['#5fb04a','#4f9f3f','#6cc255'][i%3]});
+  for(let i=0;i<34;i++){
+    const x=G.x0+20+r()*760,d=G.d0+20+r()*560;
+    if(Math.hypot(x,d-40)<60)continue;      // 出生點附近留空
+    out.push({kind:'flower',x,d,h:9+r()*6,col:cols[i%4]});
+  }
+  [[-230,-120,15],[190,140,12],[-90,190,10],[280,-160,17]].forEach(([x,d,rad])=>out.push({kind:'rock',x,d,r:rad}));
+  return out;
+}
+SCENES.outdoor={
+  id:'outdoor',name:'室外草皮',type:'outdoor',kp:.0008,
+  room:null,
+  bounds:{x0:-340,x1:340,d0:-240,d1:250},
+  center:{x:0,d:0},spawn:{x:0,d:40},
+  slots:[],
+  decor:buildDecor(),
+  drawBase(c,v){
+    if(!tiles){tiles=buildTiles();const r=rng(3);hills=[];for(let i=0;i<10;i++)hills.push([r(),r()]);}
+    const yh=Math.min(v.H*.75,View.P(v,0,0,-900)[1]);
+    // 天空
+    const g=c.createLinearGradient(0,0,0,Math.max(60,yh));g.addColorStop(0,'#74cdf5');g.addColorStop(1,'#dcf3ff');
+    c.fillStyle=g;c.fillRect(0,0,v.W,v.H);
+    // 遠山(兩層)
+    [['#8cc79a',.55,0],['#72b784',.4,1]].forEach(([col,hk,layer])=>{
+      c.fillStyle=col;c.beginPath();c.moveTo(-20,yh+2);
+      for(let i=0;i<=10;i++){const x=-20+i*(v.W+40)/10,h=(20+hills[i%10][layer]*46)*v.sc*hk*.6;c.lineTo(x,yh-h);}
+      c.lineTo(v.W+20,yh+2);c.closePath();c.fill();
+    });
+    // 地面
+    c.fillStyle='#7cc85a';c.fillRect(0,yh,v.W,v.H-yh);
+    tiles.forEach(t=>{
+      S.flat(c,v,t.t1,t.a);S.flat(c,v,t.t2,t.b);
+    });
+  },
+};
+})();
+
+/* ---- ../engine/render.js ---- */
+'use strict';
+/* 場景渲染:背景 → 地面裝飾 → 牆 → 牆面裝飾 → 陰影 → 依深度排序的物件與貓 */
+function drawDecorLayer(c,v,scene,layer,items){
+  items.forEach(it=>{const def=DECOR[it.kind];if(def.layer===layer)def.draw(c,v,it);});
+}
+function drawCatSprites(c,v,agent,coat,t){
+  const p=View.P(v,agent.x,0,agent.d),k=v.sc*View.f(v,agent.d),w=CameraRules.catSprite(v.t);
+  [['high',GAME_CONFIG.cat.spritePitch.high],['close',GAME_CONFIG.cat.spritePitch.close]].forEach(([key,pitch])=>{
+    if(w[key]<=.001)return;
+    c.save();c.globalAlpha=w[key];c.translate(p[0],p[1]);c.scale(k,k);
+    drawCat(c,{dir:agent.dir,act:agent.act,pitch,t,coat});
+    c.restore();
+  });
+}
+function renderScene(c,v,scene,agent,coat,t){
+  c.setTransform(1,0,0,1,0,0);
+  const items=resolveDecor(scene);
+  scene.drawBase(c,v,t);
+  drawDecorLayer(c,v,scene,'floor',items);
+  if(scene.drawWalls)scene.drawWalls(c,v,t);
+  drawDecorLayer(c,v,scene,'wall',items);
+  // 貓的陰影:橢圓依場景俯角壓扁,和地面對得上
+  const p=View.P(v,agent.x,0,agent.d),k=v.sc*View.f(v,agent.d);
+  c.fillStyle='rgba(20,30,20,.28)';c.beginPath();
+  c.ellipse(p[0],p[1],36*k,Math.max(4,24*v.sn*k),0,0,7);c.fill();
+  // 依深度由遠到近繪製
+  const list=items.filter(it=>DECOR[it.kind].layer==='prop').map(it=>({k:DECOR[it.kind].depth?DECOR[it.kind].depth(it):it.d,fn:()=>DECOR[it.kind].draw(c,v,it)}));
+  list.push({k:agent.d,fn:()=>drawCatSprites(c,v,agent,coat,t)});
+  paint(list);
+}
+
 /* ---- main.js ---- */
 'use strict';
 /* 預覽頁:花色切換、走路/坐下 × 4 方向 × 2 視角,可匯出 PNG 圖集 */
@@ -444,29 +818,42 @@ function exportSheet(key){
 }
 document.getElementById('exp').onclick=()=>exportSheet(coatKey);
 
-/* ---- 鏡頭距離示範:距離 → 俯角 / 縮放 / 貓圖組(近距離組與高俯角組淡入淡出) ---- */
-const demo=document.getElementById('demo'),dc=demo.getContext('2d'),dist=document.getElementById('dist'),info=document.getElementById('info');
-let demoDir='left',demoAct='walk';
-const DIRS=['left','right','up','down'];
-document.getElementById('dir').onclick=()=>{demoDir=DIRS[(DIRS.indexOf(demoDir)+1)%4];};
-document.getElementById('act').onclick=()=>{demoAct=demoAct==='walk'?'sit':'walk';};
-function demoFrame(ms){
-  const t=ms/1000,d=dist.value/100,W=demo.width,H=demo.height;
-  const pitch=CameraRules.pitchForDistance(d),w=CameraRules.catSprite(d),sc=CameraRules.catScale(d);
+/* ---- demo.js ---- */
+'use strict';
+/* 場景示範:切換場景、縮放(距離綁定俯角)、點擊讓貓走過去 */
+(function(){
+const cv=document.getElementById('demo'),c=cv.getContext('2d'),dist=document.getElementById('dist'),info=document.getElementById('info');
+const bar=document.getElementById('scenes'),autoBtn=document.getElementById('auto');
+const view=View.create(cv.width,cv.height);
+let scene=SCENES.indoor,agent=CatAgent.create(scene),tPrev=0;
+
+Object.values(SCENES).forEach(s=>{
+  const b=document.createElement('button');b.textContent=s.name;b.dataset.id=s.id;
+  b.onclick=()=>{scene=s;agent=CatAgent.create(s);agent.auto=autoBtn.classList.contains('on');[...bar.children].forEach(x=>x.classList.toggle('on',x===b));};
+  bar.appendChild(b);
+});
+bar.children[0].classList.add('on');
+autoBtn.onclick=()=>{autoBtn.classList.toggle('on');agent.auto=autoBtn.classList.contains('on');autoBtn.textContent='自動漫遊:'+(agent.auto?'開':'關');};
+
+cv.addEventListener('click',e=>{
+  const r=cv.getBoundingClientRect(),sx=(e.clientX-r.left)*cv.width/r.width,sy=(e.clientY-r.top)*cv.height/r.height;
+  const g=View.unproject(view,sx,sy);CatAgent.goTo(agent,scene,g.x,g.d);
+});
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();dist.value=Math.min(100,Math.max(0,+dist.value+(e.deltaY>0?6:-6)));
+},{passive:false});
+
+function frame(ms){
+  const t=ms/1000,dt=Math.min(.05,t-tPrev);tPrev=t;
   BL=(t%3.6)<.14?.15:1;
-  const sn=Math.sin(pitch*Math.PI/180),oy=H-90,yh=oy-Math.max(20,260*sn);
-  dc.setTransform(1,0,0,1,0,0);
-  dc.fillStyle='#d9eef7';dc.fillRect(0,0,W,H);
-  dc.fillStyle='#8ed05e';dc.fillRect(0,yh,W,H-yh);
-  const th=Math.max(8,80*sn);
-  for(let r=0,y=yh;y<H;r++,y+=th)for(let x=0,i=0;x<W;x+=90,i++){dc.fillStyle=(i+r)%2?'#8ed05e':'#98dc68';dc.fillRect(x,y,91,th+1);}
-  dc.fillStyle='rgba(30,70,20,.25)';dc.beginPath();dc.ellipse(W/2,oy,80*sc,Math.max(6,30*sn*sc),0,0,7);dc.fill();
-  [['high',GAME_CONFIG.cat.spritePitch.high],['close',GAME_CONFIG.cat.spritePitch.close]].forEach(([k,p])=>{
-    if(w[k]<=0.001)return;
-    dc.save();dc.globalAlpha=w[k];dc.translate(W/2,oy);dc.scale(sc*1.6,sc*1.6);
-    drawCat(dc,{dir:demoDir,act:demoAct,pitch:p,t,coat:coatKey});dc.restore();
-  });
-  info.textContent=`距離 ${d.toFixed(2)}・場景俯角 ${pitch.toFixed(0)}°・貓圖:高俯角 ${(w.high*100).toFixed(0)}% / 近距離 ${(w.close*100).toFixed(0)}%`;
-  requestAnimationFrame(demoFrame);
+  CatAgent.update(agent,scene,dt);
+  const d=dist.value/100,k=1-d;                 // 越近越跟著貓,越遠越看整個場景
+  const focus={x:scene.center.x+(agent.x-scene.center.x)*k,d:scene.center.d+(agent.d-scene.center.d)*k};
+  View.update(view,d,focus,scene.kp);
+  renderScene(c,view,scene,agent,coatKey,t);
+  const w=CameraRules.catSprite(d);
+  info.textContent=`${scene.name}・距離 ${d.toFixed(2)}・場景俯角 ${view.pitch.toFixed(0)}°・貓圖:高俯角 ${(w.high*100).toFixed(0)}% / 近距離 ${(w.close*100).toFixed(0)}%`;
+  requestAnimationFrame(frame);
 }
-requestAnimationFrame(demoFrame);
+requestAnimationFrame(frame);
+})();

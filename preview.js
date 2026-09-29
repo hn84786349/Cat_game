@@ -1,327 +1,347 @@
-/* ---- ../cat/core.js ---- */
-
+/* ---- ../cat/mesh.js ---- */
 'use strict';
-/* 低多邊形繪圖工具:三色漸層、三角面明暗、六角形眼睛 */
-let BL=1;                       // 眨眼(0.15=閉眼,1=睜眼)
-const PAL={o:null,w:null};      // 目前花色的身體色 / 白色部位色
-let STRIPE='rgba(0,0,0,0)';     // 目前花色的條紋色
-let COAT=null;
+/* 低多邊形 3D 網格與軟體渲染。
+   模型座標:x=朝前,y=向上,z=左右;腳底在 y=0。
+   渲染:依朝向(dir)把模型轉成螢幕座標 (X 右, Z 上, D 往鏡頭),再以俯角 pitch 投影,
+   背面剔除、由遠到近排序、平面明暗。 */
+const V={
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  mul:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.hypot(a[0],a[1],a[2]),
+  norm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];},
+  lerp:(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t],
+  mid:(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2],
+};
 
-function setCoat(c){
-  COAT=c;PAL.o=c.o.slice();PAL.w=c.w.slice();
-  STRIPE=c.stripe||'rgba(0,0,0,0)';
+class Mesh{
+  constructor(){this.tris=[];this.lines=[];this.anchor=[0,0,0];}
+  /** 三角形。inside=模型內部一點,法線會被調成朝外 */
+  tri(a,b,c,tag,inside,extra){
+    let n=V.norm(V.cross(V.sub(b,a),V.sub(c,a)));
+    const cen=[(a[0]+b[0]+c[0])/3,(a[1]+b[1]+c[1])/3,(a[2]+b[2]+c[2])/3];
+    if(inside&&V.dot(n,V.sub(cen,inside))<0)n=V.mul(n,-1);
+    this.tris.push(Object.assign({p:[a,b,c],n,cen,tag,loc:V.sub(cen,this.anchor)},extra));
+  }
+  line(a,b,tag){this.lines.push({p:[a,b],tag});}
 }
-function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 
-function path(c,pts){c.beginPath();pts.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();}
-
-/* 三花等花色的色塊:只畫在夠大的身體/頭部多邊形上,位置由多邊形形狀決定,動畫時不會閃 */
-function patchFill(c,x0,y0,x1,y1,n){
-  const r=rng((Math.round(x0)*73856093)^(Math.round(y0)*19349663)^(Math.round(x1-x0)*83492791)^n);
-  const w=x1-x0,h=y1-y0;
-  COAT.patches.forEach(pt=>{
-    for(let i=0;i<pt.n;i++){
-      const cx=x0+w*(.15+.7*r()),cy=y0+h*(.15+.7*r()),rad=pt.size*Math.min(w,h)*(.7+.6*r());
-      const q=[];for(let k=0;k<7;k++){const a=Math.PI*2*k/7+r();const rr=rad*(.75+.5*r());q.push([cx+Math.cos(a)*rr,cy+Math.sin(a)*rr]);}
-      c.fillStyle=pt.col;path(c,q);c.fill();
+/** 沿路徑做環狀截面的管狀網格。path=[[x,y,z],...],radii=[[a,b],...](a=面內半徑,b=左右半徑)
+    opts:{sides,capStart,capEnd,tag,tagAt(u),ref} ref 未給時假設路徑大致在 x-y 平面(左右軸 = z) */
+function catmull(p0,p1,p2,p3,t){
+  const t2=t*t,t3=t2*t;
+  return p1.map((_,i)=>.5*(2*p1[i]+(-p0[i]+p2[i])*t+(2*p0[i]-5*p1[i]+4*p2[i]-p3[i])*t2+(-p0[i]+3*p1[i]-3*p2[i]+p3[i])*t3));
+}
+/** 用 Catmull-Rom 在每段之間補 sub-1 個點,讓形狀更圓潤 */
+function resample(path,radii,sub){
+  if(!sub||sub<2||path.length<3)return{path,radii};
+  const P=[],R=[],n=path.length;
+  for(let i=0;i<n-1;i++){
+    const a=path[Math.max(i-1,0)],b=path[i],c=path[i+1],d=path[Math.min(i+2,n-1)];
+    const ra=radii[Math.max(i-1,0)],rb=radii[i],rc=radii[i+1],rd=radii[Math.min(i+2,n-1)];
+    for(let j=0;j<sub;j++){P.push(catmull(a,b,c,d,j/sub));R.push(catmull(ra,rb,rc,rd,j/sub));}
+  }
+  P.push(path[n-1]);R.push(radii[n-1]);
+  return{path:P,radii:R};
+}
+function tube(mesh,path0,radii0,opts={}){
+  const rs=resample(path0,radii0,opts.smooth),path=rs.path,radii=rs.radii;
+  const n=path.length,sides=opts.sides||10,rings=[];
+  for(let i=0;i<n;i++){
+    const t=V.norm(V.sub(path[Math.min(n-1,i+1)],path[Math.max(0,i-1)]));
+    let v,u;
+    if(opts.ref){u=V.norm(V.sub(opts.ref,V.mul(t,V.dot(opts.ref,t))));v=V.cross(t,u);}
+    else{const Z=[0,0,1];v=V.norm(V.sub(Z,V.mul(t,V.dot(Z,t))));u=V.cross(v,t);}
+    const pts=[];
+    for(let k=0;k<sides;k++){
+      const th=Math.PI*2*k/sides+(opts.phase||0);
+      pts.push(V.add(path[i],V.add(V.mul(u,radii[i][0]*Math.cos(th)),V.mul(v,radii[i][1]*Math.sin(th)))));
     }
+    rings.push(pts);
+  }
+  for(let i=0;i<n-1;i++){
+    const u01=(i+.5)/(n-1),tag=opts.tagAt?opts.tagAt(u01):opts.tag,ins=V.mid(path[i],path[i+1]);
+    for(let k=0;k<sides;k++){
+      const k2=(k+1)%sides,a=rings[i][k],b=rings[i][k2],c=rings[i+1][k2],d=rings[i+1][k];
+      mesh.tri(a,b,c,tag,ins,{u:u01,ang:k/sides});
+      mesh.tri(a,c,d,tag,ins,{u:u01,ang:(k+.5)/sides});
+    }
+  }
+  const cap=(i,other,tagU)=>{
+    const tag=opts.tagAt?opts.tagAt(tagU):opts.tag;
+    for(let k=0;k<sides;k++){mesh.tri(path[i],rings[i][k],rings[i][(k+1)%sides],tag,path[other],{u:tagU,ang:k/sides});}
+  };
+  if(opts.capStart!==false)cap(0,1,0);
+  if(opts.capEnd!==false)cap(n-1,n-2,1);
+}
+/** 橢球(經緯度網格) */
+function ellipsoid(mesh,c,rx,ry,rz,tag,o={}){
+  const rows=o.rows||5,sides=o.sides||8,R=[];
+  for(let i=0;i<=rows;i++){
+    const ph=Math.PI*i/rows,r=Math.sin(ph),y=Math.cos(ph),ring=[];
+    for(let k=0;k<sides;k++){const th=Math.PI*2*k/sides;ring.push([c[0]+rx*r*Math.cos(th),c[1]+ry*y,c[2]+rz*r*Math.sin(th)]);}
+    R.push(ring);
+  }
+  for(let i=0;i<rows;i++)for(let k=0;k<sides;k++){
+    const k2=(k+1)%sides,a=R[i][k],b=R[i][k2],cc=R[i+1][k2],d=R[i+1][k];
+    if(i>0)mesh.tri(a,b,cc,tag,c,{u:i/rows,ang:k/sides});
+    if(i<rows-1)mesh.tri(a,cc,d,tag,c,{u:i/rows,ang:k/sides});
+    if(i===0)mesh.tri(a,cc,d,tag,c,{u:0,ang:k/sides});
+    if(i===rows-1)mesh.tri(a,b,cc,tag,c,{u:1,ang:k/sides});
+  }
+}
+/** 2 連桿 IK:A→T,回傳關節位置(x-y 平面,z 取 A[2]) */
+function shiftMesh(m,dx,dy=0,dz=0){
+  const f=p=>[p[0]+dx,p[1]+dy,p[2]+dz];
+  m.tris.forEach(t=>{t.p=t.p.map(f);t.cen=f(t.cen);});
+  m.lines.forEach(l=>{l.p=l.p.map(f);});
+}
+function ik2(A,T,L1,L2,bend){
+  let dx=T[0]-A[0],dy=T[1]-A[1],d=Math.hypot(dx,dy)||1e-6;
+  const ux=dx/d,uy=dy/d;
+  d=Math.min(d,L1+L2-1e-3);d=Math.max(d,Math.abs(L1-L2)+1e-3);
+  const a=(L1*L1-L2*L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,L1*L1-a*a));
+  return[A[0]+ux*a-uy*h*bend,A[1]+uy*a+ux*h*bend,A[2]];
+}
+
+/* ---- 渲染 ---- */
+const LIGHT=V.norm([-.42,.8,.55]);   // 在螢幕座標 (X,Z,D) 的光源方向
+function orient(dir,p){
+  switch(dir){
+    case'right':return[p[0],p[1],p[2]];
+    case'left':return[-p[0],p[1],-p[2]];
+    case'down':return[p[2],p[1],p[0]];    // 面向鏡頭:朝前的 x 軸變成往鏡頭的 D
+    case'up':return[-p[2],p[1],-p[0]];
+  }
+}
+/** 把網格畫到 c 上,原點(0,0)=腳底中心。colorAt(tri)→[r,g,b] */
+function renderMesh(c,mesh,view,colorAt){
+  const r=view.pitch*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r),dir=view.dir,items=[];
+  const prj=q=>[q[0],-q[1]*cs+q[2]*sn,q[2]*cs+q[1]*sn];   // → [sx, sy, 深度]
+  mesh.tris.forEach((t,i)=>{
+    const n=orient(dir,t.n);
+    if(!t.double&&n[1]*sn+n[2]*cs<=.02)return;            // 背面剔除
+    const P=t.p.map(p=>prj(orient(dir,p)));
+    const depth=(P[0][2]+P[1][2]+P[2][2])/3;
+    items.push({k:depth,t,n,P,i});
+  });
+  mesh.lines.forEach(l=>{
+    const P=l.p.map(p=>prj(orient(dir,p)));
+    items.push({k:(P[0][2]+P[1][2])/2+.5,line:l,P});
+  });
+  items.sort((a,b)=>a.k-b.k);
+  c.lineJoin='round';
+  items.forEach(it=>{
+    if(it.line){
+      c.strokeStyle='rgba(255,255,255,.85)';c.lineWidth=.7;c.lineCap='round';
+      c.beginPath();c.moveTo(it.P[0][0],it.P[0][1]);c.lineTo(it.P[1][0],it.P[1][1]);c.stroke();return;
+    }
+    if(it.t.tag==='eye'||it.t.tag==='pupil'){
+      const col=colorAt(it.t),s=`rgb(${col[0]|0},${col[1]|0},${col[2]|0})`;
+      c.fillStyle=s;c.strokeStyle=s;c.lineWidth=.5;
+      c.beginPath();c.moveTo(it.P[0][0],it.P[0][1]);c.lineTo(it.P[1][0],it.P[1][1]);c.lineTo(it.P[2][0],it.P[2][1]);c.closePath();c.fill();c.stroke();return;
+    }
+    const col=colorAt(it.t),nd=V.dot(it.n,LIGHT);
+    const jit=1+(((it.i*2654435761)>>>0)%1000/1000-.5)*.07;
+    const k=Math.min(1.18,Math.max(.42,(.6+.52*nd)*jit));
+    const s=`rgb(${Math.min(255,col[0]*k)|0},${Math.min(255,col[1]*k)|0},${Math.min(255,col[2]*k)|0})`;
+    c.fillStyle=s;c.strokeStyle=s;c.lineWidth=.6;
+    c.beginPath();c.moveTo(it.P[0][0],it.P[0][1]);c.lineTo(it.P[1][0],it.P[1][1]);c.lineTo(it.P[2][0],it.P[2][1]);c.closePath();c.fill();c.stroke();
   });
 }
 
-function poly(c,pts,pal,o={}){
-  const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
-  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
-  const g=c.createLinearGradient(0,y0,0,y1);g.addColorStop(0,pal[0]);g.addColorStop(.5,pal[1]);g.addColorStop(1,pal[2]);
-  c.save();path(c,pts);c.clip();
-  c.fillStyle=g;c.fillRect(x0-2,y0-2,x1-x0+4,y1-y0+4);
-  if(pal===PAL.o&&COAT&&COAT.patches&&(x1-x0)*(y1-y0)>800)patchFill(c,x0,y0,x1,y1,pts.length);
-  if(o.deco)o.deco(c);
-  const n=pts.length,cx=xs.reduce((a,b)=>a+b)/n,cy=ys.reduce((a,b)=>a+b)/n;
-  for(let i=0;!o.noFacet&&i<n;i++){
-    const a=pts[i],b=pts[(i+1)%n];
-    let mx=(a[0]+b[0])/2-cx,my=(a[1]+b[1])/2-cy;const l=Math.hypot(mx,my)||1;mx/=l;my/=l;
-    const k=(mx*-.5+my*-.85)-.05;
-    c.fillStyle=k>0?`rgba(255,255,255,${Math.min(.22,k*.4)})`:`rgba(20,10,30,${Math.min(.22,-k*.3)})`;
-    c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.lineTo(cx,cy);c.closePath();c.fill();
-  }
-  if(o.dark){c.fillStyle=`rgba(20,10,30,${o.dark})`;c.fillRect(x0-2,y0-2,x1-x0+4,y1-y0+4);}
-  c.restore();
-}
-function tri(c,pts,col){c.fillStyle=col;path(c,pts);c.fill();}
-
-function ribbon(c,cl,w0,w1,stripes=[],pal=PAL.o){
-  const n=cl.length,L=[],R=[];
-  for(let i=0;i<n;i++){
-    const p=cl[i],a=cl[Math.max(0,i-1)],b=cl[Math.min(n-1,i+1)];
-    let tx=b[0]-a[0],ty=b[1]-a[1];const l=Math.hypot(tx,ty)||1;tx/=l;ty/=l;
-    const w=(w0+(w1-w0)*i/(n-1))/2;
-    L.push([p[0]-ty*w,p[1]+tx*w]);R.push([p[0]+ty*w,p[1]-tx*w]);
-  }
-  poly(c,L.concat(R.slice().reverse()),pal,{deco:c=>{stripes.forEach(i=>{if(i+1<n)tri(c,[L[i],L[i+1],R[i+1],R[i]],STRIPE);});}});
-}
-function eye(c,x,y,r){
-  c.fillStyle=COAT.eye||'#1a1210';c.beginPath();
-  for(let i=0;i<6;i++){const a=Math.PI/6+i*Math.PI/3;c.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r*BL);}
-  c.closePath();c.fill();
-  if(BL>.5){c.fillStyle='rgba(255,255,255,.8)';c.beginPath();c.arc(x+r*.3,y-r*.35,r*.3,0,7);c.fill();}
-}
-function whisk(c,x,y,dx){
-  c.strokeStyle='rgba(255,255,255,.85)';c.lineWidth=.9;c.lineCap='round';
-  [[16,-4],[17,1],[15,6]].forEach(([a,b])=>{c.beginPath();c.moveTo(x,y);c.lineTo(x+dx*a,y+b);c.stroke();});
-}
-function leg(c,x,yt,sw,lift,wt,wb,toe=0,dark=0){
-  const px=x+sw;
-  poly(c,[[x-wt,yt],[x+wt,yt],[px+wb,-5-lift],[px-wb,-5-lift]],PAL.o,{dark});
-  poly(c,[[px-wb-1,-6-lift],[px+wb+1+toe,-6-lift],[px+wb+2+toe,-lift],[px-wb-1,-lift]],PAL.w,{dark});
-}
-
 /* ---- ../cat/coats.js ---- */
-
 'use strict';
-/* 花色定義:o=身體三階色(上/中/下),w=白色部位(腳掌、胸口、口鼻),stripe=條紋色,eye=眼睛顏色,patches=色塊 */
+/* 花色:顏色都用 [r,g,b]。colorAt(tri) 依三角形所在的部位與位置決定顏色。 */
+const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+const mixc=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+function hash3(x,y,z){let h=(Math.floor(x)*73856093)^(Math.floor(y)*19349663)^(Math.floor(z)*83492791);h=(h^(h>>>13))*1274126177;return((h^(h>>>16))>>>0)/4294967296;}
+function vnoise(x,y,z){
+  const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z),f=t=>t*t*(3-2*t),fx=f(x-xi),fy=f(y-yi),fz=f(z-zi);
+  const L=(a,b,t)=>a+(b-a)*t,h=(i,j,k)=>hash3(xi+i,yi+j,zi+k);
+  return L(L(L(h(0,0,0),h(1,0,0),fx),L(h(0,1,0),h(1,1,0),fx),fy),L(L(h(0,0,1),h(1,0,1),fx),L(h(0,1,1),h(1,1,1),fx),fy),fz);
+}
+/* 欄位:base 主色、light 淺色(腹部/胸口/口鼻/腳掌)、stripe 條紋色、tabby 是否虎斑、
+   pawsWhite/chestWhite/muzzleWhite 白色部位、patches 三花色塊、eye 眼睛、nose 鼻子 */
 const COATS={
-  orange:{name:'橘虎斑',o:['#c85a10','#f28a2c','#ffc98a'],w:['#e5d6c2','#fff6e8','#ffffff'],stripe:'#a8480c'},
-  cream:{name:'奶油橘',o:['#dc9a58','#f7c88a','#ffe6c4'],w:['#f0e2cc','#fff9ee','#ffffff'],stripe:'#cf8a48'},
-  gray:{name:'灰虎斑',o:['#666b7a','#9aa0ae','#cdd1dc'],w:['#dcdee6','#f4f5f8','#ffffff'],stripe:'#484c5c',eye:'#d9a81c'},
-  black:{name:'黑貓',o:['#15151c','#2c2c38','#4a4a5a'],w:['#15151c','#2c2c38','#4a4a5a'],stripe:null,eye:'#f2c230'},
-  white:{name:'白貓',o:['#d8d1c8','#f6f1ea','#ffffff'],w:['#e8e2da','#faf7f2','#ffffff'],stripe:null,eye:'#3e92d8'},
-  tuxedo:{name:'賓士',o:['#15151c','#2c2c38','#4a4a5a'],w:['#e5d6c2','#fff6e8','#ffffff'],stripe:null,eye:'#f2c230'},
-  calico:{name:'三花',o:['#ddd6cd','#faf6f0','#ffffff'],w:['#e8e2da','#fbf8f3','#ffffff'],stripe:null,
-    patches:[{col:'#e07a1a',n:3,size:.34},{col:'#24242c',n:2,size:.28}]},
+  orange:{name:'橘虎斑',base:rgb('#e8862c'),light:rgb('#ffe2bd'),stripe:rgb('#b85a14'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#f0c53c'),nose:rgb('#f08a9c')},
+  cream:{name:'奶油橘',base:rgb('#f1c48a'),light:rgb('#fff4e2'),stripe:rgb('#d9a468'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#c9a03a'),nose:rgb('#f4a0a8')},
+  gray:{name:'灰虎斑',base:rgb('#8a8f9c'),light:rgb('#e6e8ee'),stripe:rgb('#5a5f6e'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#c8b040'),nose:rgb('#e89aa8')},
+  black:{name:'黑貓',base:rgb('#2a2a34'),light:rgb('#4a4a58'),eye:rgb('#f0c030'),nose:rgb('#6a4a58')},
+  white:{name:'白貓',base:rgb('#f2ede6'),light:rgb('#ffffff'),eye:rgb('#4a9ad8'),nose:rgb('#f4a0b0')},
+  tuxedo:{name:'賓士',base:rgb('#2a2a34'),light:rgb('#f7f2ea'),chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#e0c030'),nose:rgb('#f0a0b0')},
+  calico:{name:'三花',base:rgb('#f7f2ea'),light:rgb('#ffffff'),chestWhite:true,pawsWhite:true,patches:[rgb('#e58a2a'),rgb('#2c2c34')],eye:rgb('#d0a838'),nose:rgb('#f0a0b0')},
 };
-
-/* ---- ../cat/proj.js ---- */
-
-'use strict';
-/* 簡易正交投影:x=左右,z=高度,d=深度(往鏡頭為正),p=俯角(度) */
-function mkP(p){
-  const r=p*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r);
-  return{cs,sn,Y:(z,d=0)=>-z*cs+d*sn,P:(x,z,d=0)=>[x,-z*cs+d*sn]};
-}
-/* 橢球在正交投影下的輪廓(橢圓,用 12 邊形表示) */
-function ellip(c,J,cx,cz,cd,ax,az,ad,pal,o={}){
-  const b=Math.hypot(az*J.cs,ad*J.sn),cy=J.Y(cz,cd),pts=[];
-  for(let i=0;i<12;i++){const a=Math.PI*2*i/12+Math.PI/12;pts.push([cx+Math.cos(a)*ax,cy+Math.sin(a)*b]);}
-  poly(c,pts,pal,{dark:o.dark,deco:o.deco?(cc=>o.deco(cc,cy,b)):null});
-  return{cy,b};
-}
-/* 依深度由遠到近繪製 */
-function paint(items){items.sort((a,b)=>a.k-b.k).forEach(i=>i.fn());}
-function legAt(c,J,x,d,sw,lift,wt,wb,toe,dark,hz){
-  c.save();c.translate(0,d*J.sn);leg(c,x,-hz*J.cs,sw,lift,wt,wb,toe,dark);c.restore();
+const PINK=rgb('#f5a3b3'),PINK_IN=rgb('#f2939f');
+function makeColorAt(coat){
+  return function(t){
+    const tag=t.tag,n=t.n,l=t.loc||[0,0,0];
+    if(tag==='eye')return coat.eye;
+    if(tag==='pupil')return[22,16,18];
+    if(tag==='nose')return coat.nose;
+    if(tag==='earIn')return PINK_IN;
+    let c=coat.base;
+    // 淺色部位
+    if(tag==='paw'&&coat.pawsWhite)return coat.light;
+    if(tag==='muzzle'&&coat.muzzleWhite)return coat.light;
+    if(tag==='head'&&coat.muzzleWhite&&l[0]>6.5&&l[1]<1.2)return coat.light;
+    if(tag==='body'&&coat.chestWhite&&t.cen[0]>6&&n[1]<.25)c=coat.light;
+    if((tag==='body'||tag==='leg')&&n[1]<-.35)c=mixc(c,coat.light,.7);          // 腹部
+    if(tag==='leg'&&coat.pawsWhite&&t.u>.72)c=coat.light;
+    // 虎斑條紋
+    if(coat.tabby){
+      const s=coat.stripe;
+      if(tag==='body'&&Math.sin(t.cen[0]*.7+1)>.5&&n[1]>-.05)return s;
+      if(tag==='tail'&&Math.sin(t.u*Math.PI*8)>.3)return s;
+      if(tag==='leg'&&t.u<.72&&Math.sin(t.cen[1]*.75)>.55)return s;
+      if(tag==='head'){
+        if(l[1]>2.6&&Math.abs(l[2])<5.5&&Math.sin(l[2]*1.7)>.2&&l[0]<8)return s;    // 額頭的 M 紋
+        if(Math.abs(l[2])>6&&l[0]>-1&&l[0]<7&&l[1]<3&&l[1]>-2&&Math.sin(l[0]*2.2)>.2)return s;   // 臉頰紋
+      }
+    }
+    // 三花色塊
+    if(coat.patches&&tag!=='paw'){
+      const q=vnoise(t.cen[0]*.09+3,t.cen[1]*.09,t.cen[2]*.09+7);
+      if(q>.6)return coat.patches[0];
+      if(q<.27)return coat.patches[1];
+    }
+    return c;
+  };
 }
 
 /* ---- ../cat/head.js ---- */
 'use strict';
-/* 頭部:正面、背面、隨俯角變化的側面 */
-const HEADPTS=cy=>[[-26,cy],[-23,cy-14],[-10,cy-22],[10,cy-22],[23,cy-14],[26,cy],[19,cy+13],[0,cy+18],[-19,cy+13]];
-function headFront(c,cy){
+/* 頭部網格:頭骨放樣、耳朵、鼻子、眼睛、鬍鬚。局部座標朝 +x,原點在頭中心。 */
+const HEAD_X=[-9,-5,-1,3,6.5,9.5,11.5];
+const HEAD_Y=[.6,.4,0,-.5,-1.4,-2.4,-3.0];
+const HEAD_R=[[6.4,6.8],[8.2,9.0],[8.6,9.8],[8.0,9.4],[6.4,7.2],[4.6,4.9],[3.2,3.4]];
+function headSurfaceHalfWidth(x,y){
+  let i=0;while(i<HEAD_X.length-2&&x>HEAD_X[i+1])i++;
+  const t=Math.min(1,Math.max(0,(x-HEAD_X[i])/(HEAD_X[i+1]-HEAD_X[i])));
+  const a=HEAD_R[i][0]+(HEAD_R[i+1][0]-HEAD_R[i][0])*t,b=HEAD_R[i][1]+(HEAD_R[i+1][1]-HEAD_R[i][1])*t;
+  const yc=HEAD_Y[i]+(HEAD_Y[i+1]-HEAD_Y[i])*t,h=(y-yc)/a;
+  return b*Math.sqrt(Math.max(0,1-h*h));
+}
+function buildHead(blink){
+  const m=new Mesh();m.anchor=[0,0,0];
+  tube(m,HEAD_X.map((x,i)=>[x,HEAD_Y[i],0]),HEAD_R,{tag:'head',sides:10});
+  // 鼻子
+  const N=[[11.6,-1.3,-1.6],[11.6,-1.3,1.6],[11.9,-3.0,0]],D=[12.9,-2.0,0],ins=[10.5,-2,0];
+  m.tri(N[0],N[1],D,'nose',ins);m.tri(N[1],N[2],D,'nose',ins);m.tri(N[2],N[0],D,'nose',ins);m.tri(N[0],N[2],N[1],'nose',ins);
   [-1,1].forEach(s=>{
-    poly(c,[[s*25,cy-6],[s*24,cy-30],[s*8,cy-20]],PAL.o);
-    tri(c,[[s*21,cy-9],[s*21,cy-24],[s*11,cy-18]],'#ff9fb5');
+    // 耳朵:四角錐,前面是粉色內耳
+    const bx=-3.2,by=6.2,bz=s*5.4;
+    const fo=[bx+3.1,by,bz+3.6*s],fi=[bx+3.1,by,bz-3.6*s],bo=[bx-2.6,by,bz+3.9*s],bi=[bx-2.6,by,bz-3.9*s],A=[bx-0.6,by+8.6,bz+1.9*s];
+    const cin=[bx,by+1,bz];
+    m.tri(fo,fi,A,'earIn',cin);m.tri(bo,bi,A,'ear',cin);m.tri(fo,bo,A,'ear',cin);m.tri(fi,bi,A,'ear',cin);
+    // 眼睛:貼在臉側的八角形,加一條直立瞳孔
+    const ex=5.2,ey=1.0,ez=s*(headSurfaceHalfWidth(ex,ey)*.96+.45);
+    const C=[ex,ey,ez],n=V.norm([.5,.05,s*.87]);
+    const up=V.norm(V.sub([0,1,0],V.mul(n,V.dot([0,1,0],n)))),sd=V.cross(n,up),bk=Math.max(.12,blink);
+    const ru=2.9*bk,rv=3.3,ring=[];
+    for(let k=0;k<8;k++){const th=Math.PI*2*k/8;ring.push(V.add(C,V.add(V.mul(up,ru*Math.cos(th)),V.mul(sd,rv*Math.sin(th)))));}
+    const inside=V.sub(C,V.mul(n,3));
+    for(let k=0;k<8;k++)m.tri(C,ring[k],ring[(k+1)%8],'eye',inside,{double:true});
+    if(blink>.5){
+      const c2=V.add(C,V.mul(n,.15)),pr=[V.add(c2,V.mul(up,ru*.9)),V.add(c2,V.mul(sd,.65)),V.sub(c2,V.mul(up,ru*.9)),V.sub(c2,V.mul(sd,.65))];
+      m.tri(pr[0],pr[1],pr[2],'pupil',inside,{double:true});m.tri(pr[0],pr[2],pr[3],'pupil',inside,{double:true});
+    }
+    // 鬍鬚:從口鼻側面往後方展開
+    [2.2,.2,-2.0].forEach(dy=>m.line([9.6,-2.5,s*3.4],[5.8,-2.5+dy,s*10.5],'whisker'));
   });
-  poly(c,HEADPTS(cy),PAL.o,{deco:c=>{
-    tri(c,[[-3,cy-23],[3,cy-23],[0,cy-11]],STRIPE);
-    [-1,1].forEach(s=>{tri(c,[[s*11,cy-22],[s*7,cy-22],[s*9,cy-12]],STRIPE);tri(c,[[s*27,cy],[s*20,cy-4],[s*24,cy+8]],STRIPE);});
-  }});
-  poly(c,[[-10,cy+4],[0,cy+1],[10,cy+4],[8,cy+13],[0,cy+17],[-8,cy+13]],PAL.w);
-  eye(c,-11,cy-2,4.2);eye(c,11,cy-2,4.2);
-  tri(c,[[-3,cy+3],[3,cy+3],[0,cy+7]],'#ff7a98');
-  c.strokeStyle='#8a4a30';c.lineWidth=.9;c.lineCap='round';
-  c.beginPath();c.moveTo(0,cy+7);c.lineTo(0,cy+10);c.moveTo(-4,cy+12);c.lineTo(0,cy+10);c.lineTo(4,cy+12);c.stroke();
-  whisk(c,-9,cy+7,-1.3);whisk(c,9,cy+7,1.3);
-}
-function headBack(c,cy){
-  [-1,1].forEach(s=>{
-    poly(c,[[s*25,cy-6],[s*24,cy-30],[s*8,cy-20]],PAL.o,{deco:c=>tri(c,[[s*22,cy-10],[s*22,cy-27],[s*13,cy-19]],STRIPE)});
-  });
-  poly(c,HEADPTS(cy),PAL.o,{deco:c=>{
-    [-14,-5,4,13].forEach(x=>tri(c,[[x,cy-23],[x+5,cy-23],[x+2.5,cy-8]],STRIPE));
-  }});
+  return m;
 }
 
-
-/* ---- 隨俯角變化的頭:x 朝前、z 向上、d 往鏡頭 ---- */
-function headSide3D(c,p){
-  const r=p*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r);
-  const Y=(z,d=0)=>-z*cs+d*sn;
-  const P=(x,z,d=0)=>[x,Y(z,d)];
-  const ez=1+.5*sn;
-  // 遠側耳朵(高俯角時會被推到頭頂上方)
-  poly(c,[P(-6,11,-9),P(9,12,-8),P(3,11+16*ez,-8)],PAL.o,{dark:.12});
-  // 頭部輪廓:橢球投影
-  const b=Math.hypot(15*cs,15*sn),pts=[];
-  for(let i=0;i<12;i++){const a=Math.PI*2*i/12+Math.PI/12;pts.push([Math.cos(a)*(Math.cos(a)>0?21:19),Math.sin(a)*b]);}
-  const sl=4+6*sn;
-  poly(c,pts,PAL.o,{deco:c=>{
-    // 頭頂花紋:俯角越高,頭頂露出得越多
-    [-8,0,8].forEach(x=>tri(c,[[x-2.5,-b-2],[x+2.5,-b-2],[x+.5,-b+sl]],STRIPE));
-    tri(c,[[-19,Y(2,10)-3],[-9,Y(2,10)-5],[-15,Y(2,10)+4]],STRIPE);
-  }});
-  // 口鼻
-  poly(c,[P(12,-1,4),P(23,-2,2),P(24,-7,1),P(16,-10,3)],PAL.w);
-  tri(c,[P(22,-2,1),P(26,-3,0),P(23,-5.5,0)],'#ff7a98');
-  // 近側耳朵
-  poly(c,[P(-14,10,9),P(1,12,8),P(-10,10+17*ez,8)],PAL.o);
-  tri(c,[P(-11,13,9.5),P(-2,14,9),P(-9,12+11*ez,9)],'#ff9fb5');
-  // 眼睛(在近側面上,俯角越高越往下移)
-  const e=P(9,4,10);eye(c,e[0],e[1],3.6);
-  // 鬍鬚
-  const w=P(17,-4,6);c.strokeStyle='rgba(255,255,255,.9)';c.lineWidth=.9;c.lineCap='round';
-  [[-10,-3],[-12,0],[-9,3]].forEach(([dx,dy])=>{c.beginPath();c.moveTo(w[0],w[1]);c.lineTo(w[0]+dx,w[1]+dy+4*sn);c.stroke();});
-}
-
-
-/* ---- ../cat/walk_side.js ---- */
+/* ---- ../cat/rig.js ---- */
 'use strict';
-/* 側面走路(朝右;朝左由鏡像產生) */
-/* ---- 真投影版側面走路:p=俯角(度)。3D 座標 x 前後、z 高度、d 深度(往鏡頭為正) ---- */
-function catSide3D(c,ph,tw,p){
-  const r=p*Math.PI/180,cs=Math.cos(r),sn=Math.sin(r);
-  const Y=(z,d=0)=>-z*cs+d*sn;
-  c.translate(0,-Math.abs(Math.sin(ph))*1.2*cs);
-  const A=q=>Math.sin(ph+q)*7,Lf=q=>Math.max(0,Math.cos(ph+q))*5*cs;
-  const HZ=(20+6*sn)*cs+2*sn;
-  const legAt=(x,d,q,dark)=>{c.save();c.translate(0,d*sn);leg(c,x,-HZ,A(q),Lf(q),5,4.2,3,dark);c.restore();};
-  // 尾巴(d=0)
-  const T=[[-32,30],[-44,32],[-52,42],[-50,56]].map(([x,z],i)=>[x+Math.sin(i*1.3+tw)*i*1.2,Y(z)]);
-  ribbon(c,T,8,4.5,[2]);
-  // 遠側兩腿
-  legAt(19,-7,Math.PI,.25);legAt(-20,-7,0,.25);
-  // 身體:橢球在正交投影下的輪廓
-  const cy=Y(30),b=Math.hypot(17*cs,15*sn),pts=[];
-  for(let i=0;i<12;i++){const a=Math.PI*2*i/12+Math.PI/12;pts.push([Math.cos(a)*(Math.cos(a)<0?35:32),cy+Math.sin(a)*b]);}
-  const sl=.55+.45*sn;
-  poly(c,pts,PAL.o,{deco:c=>{
-    [-22,-12,-2,8,18].forEach(x=>tri(c,[[x,cy-b-2],[x+7,cy-b-2],[x+3,cy-b+2*b*sl],[x-3,cy-b+2*b*sl]],STRIPE));
-  }});
-  poly(c,[[15,cy+b*.05],[30,cy-b*.15],[29,cy+b*.55],[19,cy+b*.85]],PAL.w);
-  // 近側兩腿
-  legAt(19,7,0,0);legAt(-20,7,Math.PI,0);
-  // 脖子(讓頭和身體相連)+頭
-  const hx=36,hy=Y(40);
-  ribbon(c,[[16,cy-b*.25],[26,(cy+hy)/2],[hx,hy+2]],26,18);
-  c.save();c.translate(hx,hy);c.rotate(.3*sn);c.scale(1.12,1.12);headSide3D(c,p);c.restore();
+/* 貓的骨架與網格:依姿勢(走路/坐下)、相位、尾巴擺動建立 Mesh。 */
+function attach(dst,src,center,tilt,sc=1){
+  const cs=Math.cos(tilt),sn=Math.sin(tilt);
+  const T=p=>[(p[0]*cs-p[1]*sn)*sc+center[0],(p[0]*sn+p[1]*cs)*sc+center[1],p[2]*sc+center[2]];
+  const R=n=>[n[0]*cs-n[1]*sn,n[0]*sn+n[1]*cs,n[2]];
+  src.tris.forEach(t=>dst.tris.push(Object.assign({},t,{p:t.p.map(T),n:R(t.n),cen:T(t.cen)})));
+  src.lines.forEach(l=>dst.lines.push({p:l.p.map(T),tag:l.tag}));
 }
-
-
-/* ---- ../cat/walk_fb.js ---- */
-'use strict';
-/* 正面(f=1,面向鏡頭)/背面(f=-1,背對鏡頭)走路 */
-function walkFB(c,ph,tw,p,f){
-  const J=mkP(p),{cs,sn,Y,P}=J,items=[];
-  c.translate(0,-Math.abs(Math.sin(ph))*1.2*cs);
-  const add=(k,fn)=>items.push({k,fn});
-  // 尾巴:從臀部翹起(背面時在鏡頭這一側,最後才畫)
-  add(f>0?-30:16,()=>{
-    const T=[[8,30,-f*24],[18,38,-f*28],[26,50,-f*28],[26,63,-f*26]].map(([x,z,d],i)=>[x+Math.sin(i*1.2+tw)*i*1.5,Y(z,d)]);
-    ribbon(c,T,8,4.5,[2,3]);
-  });
-  // 四條腿:對角一起動
-  [[-11,f*13,0],[11,f*13,Math.PI],[-11,-f*14,Math.PI],[11,-f*14,0]].forEach(([x,d,q])=>{
-    const de=d+Math.cos(ph+q)*4*f, lift=Math.max(0,Math.sin(ph+q))*5*cs;
-    add(de,()=>legAt(c,J,x,de,0,lift,5.5,4.6,0,de<0?.15:0,20));
-  });
-  // 身體
-  add(0,()=>ellip(c,J,0,29,0,20,17,22,PAL.o,{deco:(cc,cy,b)=>{
-    [-14,-6,2,10].forEach(dk=>{
-      const y=Y(42,dk);
-      tri(cc,[[-26,Y(28,dk)],[-18,y],[18,y],[26,Y(28,dk)],[26,Y(28,dk)+3.5],[18,y+3.5],[-18,y+3.5],[-26,Y(28,dk)+3.5]],STRIPE);
-    });
-  }}));
-  if(f>0)add(1,()=>poly(c,[P(-9,34,16),P(9,34,16),P(7,18,20),P(-7,18,20)],PAL.w));
-  // 脖子與頭
-  add(9,()=>ribbon(c,[P(0,38,f*8),P(0,48,f*16)],26,19));
-  add(10,()=>{
-    const h=P(0,50,f*17);c.save();c.translate(h[0],h[1]);c.scale(.8,.8);
-    if(f>0)headFront(c,0);else headBack(c,0);
-    c.restore();
-  });
-  paint(items);
+const LEGTAG=u=>u>.78?'paw':'leg';
+function footCycle(theta,A,H){
+  const s=((theta%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+  if(s<Math.PI)return[A*(1-2*s/Math.PI),0];
+  const q=(s-Math.PI)/Math.PI;return[A*(-1+2*q),H*Math.sin(q*Math.PI)];
 }
-
-/* ---- ../cat/sit.js ---- */
-'use strict';
-/* 坐姿:側面(朝右)、正面、背面 */
-function sitSide(c,tw,p){
-  const J=mkP(p),{cs,sn,Y,P}=J,items=[];
-  const add=(k,fn)=>items.push({k,fn});
-  const frontLeg=(d,dark)=>{
-    poly(c,[P(8,34,d),P(18,34,d),P(19,4,d),P(9,4,d)],PAL.o,{dark});
-    poly(c,[P(8,5,d),P(23,5,d),P(25,0,d),P(8,0,d)],PAL.w,{dark});
-  };
-  const haunch=(d,dark)=>{
-    ellip(c,J,-9,10,d,14,10,9,PAL.o,{dark,deco:(cc,cy,b)=>{tri(cc,[[-20,cy-b],[-12,cy-b],[-15,cy+b*.3]],STRIPE);tri(cc,[[-6,cy-b],[0,cy-b],[-3,cy+b*.2]],STRIPE);}});
-    poly(c,[P(-4,2,d),P(10,2,d),P(13,0,d),P(-4,0,d)],PAL.w,{dark});
-  };
-  add(-20,()=>{
-    const T=[[-14,3,-2],[-28,2,2],[-38,4,-2],[-42,12,-4+Math.sin(tw)*2]].map(([x,z,d])=>[x,Y(z,d)]);
-    ribbon(c,T,8,5,[2,3]);
-  });
-  add(-6,()=>frontLeg(-5,.2));
-  add(-9,()=>haunch(-9,.2));
-  add(0,()=>ellip(c,J,-2,30,0,13,22,13,PAL.o,{deco:(cc,cy,b)=>{
-    [-9,-2,5].forEach(x=>tri(cc,[[x,cy-b-2],[x+6,cy-b-2],[x+3,cy-b*.2],[x-3,cy-b*.2]],STRIPE));
-  }}));
-  add(1,()=>poly(c,[P(6,42,4),P(14,36,3),P(14,18,3),P(8,18,4)],PAL.w));
-  add(9,()=>haunch(9,0));
-  add(5,()=>frontLeg(5,0));
-  add(10,()=>ribbon(c,[P(2,44,0),P(8,52,0)],24,18));
-  add(11,()=>{const h=P(8,54,0);c.save();c.translate(h[0],h[1]);c.rotate(.3*sn);c.scale(1.12,1.12);headSide3D(c,p);c.restore();});
-  paint(items);
+function frontLeg(m,S,foot,z){
+  const P=[16+foot[0],foot[1],z],W=[P[0]-.3,P[1]+8.6,z],E=ik2([S[0],S[1],z],W,10.6,10.6,-1);
+  const path=[[S[0],S[1]+1,z],E,W,[W[0]+.3,P[1]+2.5,z],[P[0]+2.2,P[1]+1.1,z]];
+  m.anchor=[0,0,0];
+  ellipsoid(m,[S[0],S[1]-.5,z],6.4,7.4,4.4,'leg',{rows:4,sides:8});
+  tube(m,path,[[4.8,4.2],[4.0,3.6],[3.0,2.8],[3.6,3.2],[4.0,3.1]],{tagAt:LEGTAG,sides:8,smooth:2});
 }
-function sitFB(c,tw,p,f){
-  const J=mkP(p),{cs,sn,Y,P}=J,items=[];
-  const add=(k,fn)=>items.push({k,fn});
-  add(f>0?-12:15,()=>{
-    const dl=f>0?[-10,-6,2,6]:[10,14,8,2],xl=[8,20,28,31],zl=[3,2,3,10+Math.sin(tw)*2];
-    ribbon(c,xl.map((x,i)=>[x,Y(zl[i],dl[i])]),8,5,[1,2]);
+function hindLeg(m,Hh,foot,z){
+  const P=[-12+foot[0],foot[1],z],H=[P[0]-1.2,P[1]+9.8,z],K=ik2([Hh[0],Hh[1],z],H,11.8,11.8,1);
+  const path=[[Hh[0],Hh[1]+1,z],K,H,[H[0]+.6,P[1]+2.6,z],[P[0]+2.2,P[1]+1.1,z]];
+  m.anchor=[0,0,0];
+  ellipsoid(m,[Hh[0]+.5,Hh[1]-.5,z*1.02],8.6,8.6,5.2,'leg',{rows:4,sides:8});
+  tube(m,path,[[5.2,4.6],[4.2,3.8],[2.9,2.7],[3.6,3.2],[4.0,3.1]],{tagAt:LEGTAG,sides:8,smooth:2});
+}
+function rigWalk(m,o){
+  const ph=o.phase,wob=Math.sin(ph*2)*.45;
+  m.anchor=[0,0,0];
+  const spine=[[-19,29.2+wob,0],[-10,30.0,0],[0,29.6,0],[9,29.6,0],[17,30.6,0],[24,34.8,0]];
+  tube(m,spine,[[8.6,7.8],[10.2,9.0],[9.8,8.6],[9.9,9.1],[11.4,10.0],[7.6,7.4]],{tag:'body',sides:10,smooth:3});
+  const sw=o.tail;
+  const tp=[[-19,31,0],[-26,32.5,0],[-31,35.5,sw*1.5],[-34,41,sw*4],[-34.5,47,sw*6],[-32.5,52,sw*7]];
+  tube(m,tp,[[3.8,3.6],[3.4,3.2],[3.0,2.9],[2.7,2.6],[2.5,2.4],[1.9,1.9]],{tag:'tail',sides:8,smooth:2});
+  const A=7,H=5.2;
+  // 對角腳同時動
+  frontLeg(m,[14.5,27.6],footCycle(ph+Math.PI,A,H),-5.4);
+  hindLeg(m,[-14,26.6],footCycle(ph,A,H),-5.8);
+  const head=buildHead(o.blink);
+  attach(m,head,[35,40+wob*.6,0],-.12,1.4);
+  frontLeg(m,[14.5,27.6],footCycle(ph,A,H),5.4);
+  hindLeg(m,[-14,26.6],footCycle(ph+Math.PI,A,H),5.8);
+}
+function rigSit(m,o){
+  const s=o.side||1,sw=o.tail;
+  m.anchor=[0,0,0];
+  // 尾巴貼地,繞到身體前面
+  const tp=[[-16,3.6,0],[-24,3.4,s*4],[-27,3.2,s*12],[-21,3.2,s*19],[-11,3.2,s*22],[-2,3.3,s*(20+sw*3)]];
+  tube(m,tp,[[3.5,3.5],[3.4,3.4],[3.3,3.3],[3.1,3.1],[2.8,2.8],[2.3,2.3]],{tag:'tail',sides:8,ref:[0,1,0],smooth:2});
+  // 後腿:大腿(橢球)與向前的腳掌
+  [-1,1].forEach(z=>{
+    ellipsoid(m,[-8,7.4,z*8.6],9.4,7.6,5.4,'leg',{rows:4,sides:8});
+    ellipsoid(m,[1.8,1.7,z*7.8],6.0,1.9,2.9,'paw',{rows:3,sides:8});
   });
-  add(0,()=>ellip(c,J,0,26,-2,17,22,13,PAL.o,{deco:(cc,cy,b)=>{
-    if(f<0)[-14,-6,2,10].forEach(dk=>{const y=Y(42,dk);tri(cc,[[-20,y+8],[-13,y],[13,y],[20,y+8],[20,y+11],[13,y+3],[-13,y+3],[-20,y+11]],STRIPE);});
-    else[-1,1].forEach(s=>[cy-b*.5,cy-b*.1].forEach(y=>tri(cc,[[s*17,y],[s*10,y+2],[s*17,y+6]],STRIPE)));
-  }}));
-  if(f>0)add(2,()=>poly(c,[P(-6,40,8),P(6,40,8),P(5,20,10),P(-5,20,10)],PAL.w));
-  add(1,()=>[-1,1].forEach(s=>{
-    ellip(c,J,s*16,9,-3,10,9,11,PAL.o,{dark:.06,deco:(cc,cy,b)=>tri(cc,[[s*20,cy-b*.6],[s*12,cy-b*.6],[s*18,cy+b*.2]],STRIPE)});
-  }));
-  add(1.5,()=>[-1,1].forEach(s=>{
-    const y=Y(1.5,f>0?2:8);
-    poly(c,[[s*17-6,y-3],[s*17+6,y-3],[s*17+7,y+1.5],[s*17-7,y+1.5]],PAL.w);
-  }));
-  if(f>0)add(3,()=>[-1,1].forEach(s=>{
-    poly(c,[P(s*6-4,34,6),P(s*6+4,34,6),P(s*6+4.5,4,6),P(s*6-4.5,4,6)],PAL.o);
-    poly(c,[P(s*6-5,5,6),P(s*6+5,5,6),P(s*6+6,0,6),P(s*6-6,0,6)],PAL.w);
-  }));
-  add(9,()=>ribbon(c,[P(0,44,0),P(0,52,f*3)],24,19));
-  add(10,()=>{const h=P(0,52,f*3);c.save();c.translate(h[0],h[1]);c.scale(.85,.85);if(f>0)headFront(c,0);else headBack(c,0);c.restore();});
-  paint(items);
+  const spine=[[-15,7.5,0],[-11,13.5,0],[-6,21,0],[0,29,0],[5,36,0],[8.5,42,0]];
+  tube(m,spine,[[8.6,9.8],[9.6,10.4],[9.6,9.9],[10.2,9.6],[9.6,8.8],[7.4,6.8]],{tag:'body',sides:10,smooth:3});
+  [-1,1].forEach(z=>{
+    const path=[[5.4,29.5,z*4.7],[6.4,18,z*4.7],[8,7,z*4.7],[9.3,3.4,z*4.7],[11.4,1.4,z*4.7]];
+    tube(m,path,[[5.8,5.4],[4.4,4.2],[3.5,3.3],[3.9,3.5],[4.3,3.5]],{tagAt:LEGTAG,sides:8,smooth:2});
+  });
+  const head=buildHead(o.blink);
+  attach(m,head,[12.5,51.5,0],.02,1.42);
+}
+function buildCat(o){
+  const m=new Mesh();
+  if(o.act==='sit'){rigSit(m,o);shiftMesh(m,2.5);}else{rigWalk(m,o);shiftMesh(m,-4);}
+  return m;
 }
 
 /* ---- ../cat/cat.js ---- */
 'use strict';
-/* 貓咪動作總入口
-   drawCat(c,{dir,act,pitch,t,coat}):在 (0,0)=腳底中心 繪製
-   dir: 'left'|'right'|'up'|'down'  act: 'walk'|'sit'  pitch: 30(高俯角)|6(近距離) */
+/* 貓咪入口:drawCat(c,{dir,act,pitch,t,coat,blink})
+   在 (0,0)=腳底中心繪製。dir: left|right|up|down;act: walk|sit;pitch: 俯角(度) */
 const CAT_POSES=[
   {dir:'left',act:'walk'},{dir:'right',act:'walk'},{dir:'up',act:'walk'},{dir:'down',act:'walk'},
   {dir:'left',act:'sit'},{dir:'right',act:'sit'},{dir:'up',act:'sit'},{dir:'down',act:'sit'},
 ];
 const CAT_LABEL={left:'左',right:'右',up:'背對',down:'面對'};
+const _colorFns={};
 function drawCat(c,o){
-  const {dir,act,pitch,t=0}=o;
-  if(o.coat)setCoat(COATS[o.coat]);
-  c.save();
-  const ph=t*6,tw=t*3;
-  if(dir==='left'||dir==='right'){
-    if(dir==='left')c.scale(-1,1);
-    if(act==='walk'){c.translate(-3,0);catSide3D(c,ph,tw,pitch);}
-    else{c.translate(7,0);sitSide(c,t*2.5,pitch);}
-  }else{
-    const f=dir==='down'?1:-1;
-    if(act==='walk')walkFB(c,ph,tw,pitch,f);else sitFB(c,t*2.5,pitch,f);
-  }
-  c.restore();
+  const t=o.t||0,coat=o.coat||'orange';
+  const cf=_colorFns[coat]||(_colorFns[coat]=makeColorAt(COATS[coat]));
+  const mesh=buildCat({act:o.act,phase:t*6,tail:Math.sin(t*2.2)*.5,blink:o.blink===undefined?1:o.blink,side:o.dir==='left'?-1:1});
+  renderMesh(c,mesh,{dir:o.dir,pitch:o.pitch},cf);
 }
 
 /* ---- main.js ---- */
@@ -360,12 +380,12 @@ function backdrop(c,pitch){
   c.fillStyle='rgba(30,70,20,.25)';c.beginPath();c.ellipse(CW/2,oy,38*SC,Math.max(3,14*sn*SC),0,0,7);c.fill();
 }
 function frame(ms){
-  const t=ms/1000;BL=(t%3.6)<.14?.15:1;
+  const t=ms/1000,blink=(t%3.6)<.14?.15:1;
   cards.forEach(k=>{
     const c=k.c;c.setTransform(DPR,0,0,DPR,0,0);
     backdrop(c,k.pitch);
     c.save();c.translate(CW/2,CH-34);c.scale(SC,SC);
-    drawCat(c,{dir:k.dir,act:k.act,pitch:k.pitch,t,coat:coatKey});
+    drawCat(c,{dir:k.dir,act:k.act,pitch:k.pitch,t,coat:coatKey,blink});
     c.restore();
   });
   requestAnimationFrame(frame);
@@ -377,7 +397,7 @@ function exportSheet(key){
   const CELL_W=320,CELL_H=300,S=2,rows=[];
   PITCHES.forEach(pt=>CAT_POSES.forEach(po=>rows.push({...po,pitch:pt.p})));
   const cols=8,cv=document.createElement('canvas');cv.width=cols*CELL_W;cv.height=rows.length*CELL_H;
-  const c=cv.getContext('2d');BL=1;
+  const c=cv.getContext('2d');
   rows.forEach((r,ri)=>{
     const n=r.act==='walk'?8:4;
     for(let i=0;i<n;i++){

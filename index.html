@@ -8,6 +8,7 @@
   /* 深色遊戲畫面:場景是主角,控制列收在下方。強調色沿用水族箱的金黃。 */
   :root{--bg:#0f1a26;--panel:#16283b;--line:#2c4a70;--fg:#eaf2ff;--muted:#9db3cc;--accent:#ffc940;--btn:#2a5a8f;color-scheme:dark}
   *{box-sizing:border-box}
+  [hidden]{display:none!important}
   body{background:var(--bg);color:var(--fg);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;margin:0;padding-inline:16px;padding-block:16px 32px}
   .wrap{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
   h1{font-size:20px;margin:0;font-weight:700}
@@ -38,7 +39,7 @@
   <div class="row"><span class="lab">場景</span><span id="scenes" class="row"></span></div>
   <div class="row"><span class="lab">花色</span><span id="coats" class="row"></span></div>
   <div class="row"><button id="auto" class="on">自動漫遊:開</button></div>
-  <div class="hint">點擊地面,貓會走過去。滑桿、滾輪或兩指縮放。拉到最近,可以看清楚貓的全貌。</div>
+  <div class="hint">點擊地面,貓會走過去。滑桿、滾輪或兩指縮放。拉到最近,可以看清楚貓的全貌。目前只有室內場景。</div>
 </div>
 <script src="game.js"></script>
 

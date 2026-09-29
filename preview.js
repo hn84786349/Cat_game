@@ -75,9 +75,10 @@ function makeCam(dir,pitch,shift){
 
 /* ---- ../cat/coats.js ---- */
 'use strict';
-/* 花色。顏色都用 [r,g,b]。
-   base 主色、light 淺色(胸口/口鼻/腳掌/腹部)、stripe 條紋色、tabby 是否虎斑、
-   chestWhite/muzzleWhite/pawsWhite 白色部位、patches 三花色塊、eye 眼睛、nose 鼻子、ink 描邊色 */
+/* 花色(扁平插畫風)。顏色都用 [r,g,b]。
+   base 主色、light 淺色(胸口/口鼻/腳掌)、stripe 條紋色、line 輪廓色(比主色深一點)、
+   tabby 是否虎斑、chestWhite/muzzleWhite/pawsWhite 白色部位、patches 大塊色塊(patchHi/patchLo 是雜訊門檻)、
+   tailTip 尾尖顏色、eye 眼睛、nose 鼻子、dark 是否深色毛 */
 const rgb=h=>[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
 const mixc=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
 const cssc=(c,k=1,a=1)=>`rgba(${Math.min(255,c[0]*k)|0},${Math.min(255,c[1]*k)|0},${Math.min(255,c[2]*k)|0},${a})`;
@@ -88,13 +89,13 @@ function vnoise(x,y,z){
   return L(L(L(h(0,0,0),h(1,0,0),fx),L(h(0,1,0),h(1,1,0),fx),fy),L(L(h(0,0,1),h(1,0,1),fx),L(h(0,1,1),h(1,1,1),fx),fy),fz);
 }
 const COATS={
-  orange:{name:'橘虎斑',base:rgb('#e59a48'),light:rgb('#f8e4c4'),stripe:rgb('#a85a20'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#b6c85a'),nose:rgb('#e8909c'),ink:rgb('#6a3e26')},
-  cream:{name:'奶油橘',base:rgb('#f6d3a2'),light:rgb('#fff6e8'),stripe:rgb('#e0b076'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#8ec8a0'),nose:rgb('#f4a0a8'),ink:rgb('#8a5a3c')},
-  gray:{name:'灰虎斑',base:rgb('#9aa0ae'),light:rgb('#eceef3'),stripe:rgb('#646a7a'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#e0c04a'),nose:rgb('#e89aa8'),ink:rgb('#4a4e5e')},
-  black:{name:'黑貓',base:rgb('#3a3a48'),light:rgb('#57576a'),eye:rgb('#f2c53a'),nose:rgb('#8a5a6a'),ink:rgb('#1c1c26'),dark:true},
-  white:{name:'白貓',base:rgb('#f6f1ea'),light:rgb('#ffffff'),eye:rgb('#5aa8e0'),nose:rgb('#f4a0b0'),ink:rgb('#9a8676')},
-  tuxedo:{name:'賓士',base:rgb('#3a3a48'),light:rgb('#faf5ec'),chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#e8c83a'),nose:rgb('#f0a0b0'),ink:rgb('#1c1c26'),dark:true},
-  calico:{name:'三花',base:rgb('#faf5ec'),light:rgb('#ffffff'),chestWhite:true,pawsWhite:true,patches:[rgb('#ee9a3a'),rgb('#3a3a46')],eye:rgb('#dcb440'),nose:rgb('#f0a0b0'),ink:rgb('#8a6a58')},
+  orange:{name:'橘虎斑',base:rgb('#eea05a'),light:rgb('#fff4e6'),stripe:rgb('#c4692e'),line:rgb('#c9834a'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#a8cf5a'),nose:rgb('#f09aa6')},
+  cream:{name:'奶油橘',base:rgb('#f7dcae'),light:rgb('#fffaf0'),stripe:rgb('#e6b982'),line:rgb('#dcbb8a'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#7fc39a'),nose:rgb('#f4a8ae')},
+  gray:{name:'灰虎斑',base:rgb('#a3a9b6'),light:rgb('#f2f3f7'),stripe:rgb('#6f7686'),line:rgb('#848b9a'),tabby:true,chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#e6c548'),nose:rgb('#eea3b0')},
+  black:{name:'黑貓',base:rgb('#3f3532'),light:rgb('#5a4d49'),line:rgb('#2b2422'),eye:rgb('#a6d15a'),nose:rgb('#a06a72'),dark:true},
+  white:{name:'白貓',base:rgb('#fbf8f4'),light:rgb('#ffffff'),line:rgb('#c4bcc6'),eye:rgb('#66aee0'),nose:rgb('#f4a8b6')},
+  tuxedo:{name:'賓士',base:rgb('#43383a'),light:rgb('#fffdf9'),line:rgb('#2e2628'),chestWhite:true,muzzleWhite:true,pawsWhite:true,eye:rgb('#c8d05a'),nose:rgb('#f0a4b0'),dark:true},
+  calico:{name:'三花',base:rgb('#fffdf9'),light:rgb('#ffffff'),line:rgb('#d9d2d0'),chestWhite:true,pawsWhite:true,patches:[rgb('#cf9256'),rgb('#4a3d3b')],patchHi:.66,patchLo:.24,tailTip:rgb('#4a3d3b'),eye:rgb('#c9c650'),nose:rgb('#f0a4b0')},
 };
 
 /* ---- ../cat/rig.js ---- */
@@ -168,10 +169,10 @@ function buildCat(o){return o.act==='sit'?rigSit(o):rigWalk(o);}
 
 /* ---- ../cat/draw.js ---- */
 'use strict';
-/* 平面寫實卡通繪製:肢體是圓潤的放樣形狀,加上細輪廓、立體明暗、毛流與花紋;頭部另畫耳朵與臉。
-   做法:每個環投影成一個圓,相鄰兩圓之間補上外切四邊形,聯集就是肢體形狀。 */
-const OUT_W=.6;                                     // 輪廓寬度(貓的單位)
-const frand=s=>{const x=Math.sin(s*12.9898+78.233)*43758.5453;return x-Math.floor(x);};
+/* 扁平向量插畫風:純色塊、幾乎沒有輪廓、沒有陰影與毛流。
+   肢體是圓潤的放樣形狀(每個截面投影成圓,相鄰圓之間補上外切四邊形,聯集就是肢體)。
+   遠側的肢體用稍深的同色區分;花色是大塊不規則色塊;臉只保留眼睛、鼻子、嘴與細鬍鬚。 */
+const OUT_W=.42;                                     // 細細的輪廓(比填色深一點的同色)
 
 function ringRadius(cam,ring){
   const Pu=cam.lin(ring.u),Pv=cam.lin(ring.v),Pt=cam.lin(ring.t);
@@ -219,99 +220,75 @@ function taper(c,p0,p1,w,bend){
   c.closePath();c.fill();
 }
 
-function drawChain(c,cam,part,coat,seed){
+function drawChain(c,cam,part,coat){
   const rings=part.rings,n=rings.length,S=rings.map(r=>cam.P(r.c)),R=rings.map(r=>Math.max(.6,ringRadius(cam,r)));
-  // 輪廓(腿根上半圈不畫,讓大腿自然接在身體上)
+  const sh=part.shade||1;
+  // 細輪廓(腿根上半圈不畫,讓大腿自然接在身體上)
   c.save();
   if(part.legTop){c.beginPath();c.rect(-1e4,S[0][1]-R[0]*.1,2e4,2e4);c.clip();}
-  c.fillStyle=cssc(coat.ink,1,.92);c.fill(unionPath(S,R,OUT_W));
+  c.fillStyle=cssc(coat.line,sh);c.fill(unionPath(S,R,OUT_W));
   c.restore();
   const shape=unionPath(S,R,0);
-  let ar=0;S.forEach((p,i)=>{ar+=R[i];});ar/=n;
-  const fillSegs=(k,dx,dy)=>{
-    c.save();c.translate(dx,dy);
-    for(let i=0;i<n-1;i++){
-      const p=new Path2D();hull(p,S[i],R[i],S[i+1],R[i+1]);
-      c.fillStyle=cssc(segColor(part,coat,i,n-1),k);c.fill(p);
-    }
-    if(n===1){c.fillStyle=cssc(coat.base,k);c.fill(unionPath(S,R,0));}
-    c.restore();
-  };
   c.save();c.clip(shape);
-  fillSegs(.74,0,0);                       // 暗部(右下)
-  fillSegs(1,-ar*.3,-ar*.36);              // 受光面往左上偏移
-  fillSegs(1.08,-ar*.42,-ar*.5);           // 最亮的高光面
+  for(let i=0;i<n-1;i++){
+    const p=new Path2D();hull(p,S[i],R[i],S[i+1],R[i+1]);
+    c.fillStyle=cssc(segColor(part,coat,i,n-1),sh);c.fill(p);
+  }
+  if(n===1){c.fillStyle=cssc(coat.base,sh);c.fill(shape);}
   decals(c,cam,part,coat,S,R);
-  furStrokes(c,part,coat,S,R,seed);
+  if(sh<1){c.fillStyle=`rgba(120,70,40,${(1-sh)*.7})`;c.fill(shape);}    // 遠側肢體稍深(暖色)
   c.restore();
-  // 腳趾
+  // 腳趾(很淡的短線)
   if(part.tagAt&&n>=2){
     const a=S[n-2],b=S[n-1],dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1,ux=dx/l,uy=dy/l;
-    c.strokeStyle=cssc(coat.ink,1,.55);c.lineWidth=.55;c.lineCap='round';
-    [-.42,0,.42].forEach(k=>{
+    c.strokeStyle=cssc(coat.line,sh,.75);c.lineWidth=.4;c.lineCap='round';
+    [-.34,.34].forEach(k=>{
       const px=b[0]+(-uy)*R[n-1]*k,py=b[1]+ux*R[n-1]*k;
-      c.beginPath();c.moveTo(px-ux*R[n-1]*.15,py-uy*R[n-1]*.15);c.lineTo(px+ux*R[n-1]*.75,py+uy*R[n-1]*.75);c.stroke();
+      c.beginPath();c.moveTo(px+ux*R[n-1]*.2,py+uy*R[n-1]*.2);c.lineTo(px+ux*R[n-1]*.8,py+uy*R[n-1]*.8);c.stroke();
     });
-  }
-}
-/** 毛流:很短的細線,順著肢體方向,深淺交錯 */
-function furStrokes(c,part,coat,S,R,seed){
-  const n=S.length;
-  c.lineCap='round';c.lineWidth=.5;
-  for(let i=0;i<n;i++){
-    const nt=normalAt(S,i),ang=Math.atan2(nt.t[1],nt.t[0]),m=Math.max(3,Math.round(R[i]*1.1));
-    for(let k=0;k<m;k++){
-      const s=seed*977+i*131+k*17,v=(frand(s)*2-1)*R[i]*.92,u=(frand(s+1)-.5)*R[i]*.6;
-      const a=ang+(frand(s+2)-.5)*.7,len=1.2+frand(s+3)*2.4;
-      const px=S[i][0]+nt.n[0]*v+nt.t[0]*u,py=S[i][1]+nt.n[1]*v+nt.t[1]*u;
-      c.strokeStyle=frand(s+4)<.5?'rgba(255,248,236,.16)':'rgba(70,35,15,.12)';
-      c.beginPath();c.moveTo(px,py);c.lineTo(px+Math.cos(a)*len,py+Math.sin(a)*len);c.stroke();
-    }
   }
 }
 function decals(c,cam,part,coat,S,R){
   const rings=part.rings,n=rings.length,tag=part.tag;
-  // 三花色塊
-  if(coat.patches&&(tag==='body'||tag==='tail'||tag==='head')){
+  // 大塊色塊(三花、賓士、雙色):低頻雜訊,形狀圓滑
+  if(coat.patches&&(tag==='body'||tag==='tail'||tag==='head'||part.tagAt)){
     rings.forEach((rg,i)=>{
-      const q=vnoise(rg.c[0]*.09+3,rg.c[1]*.09,rg.c[2]*.09+7);
-      let col=null;if(q>.6)col=coat.patches[0];else if(q<.27)col=coat.patches[1];
+      const f=tag==='head'?.16:.075,q=vnoise(rg.c[0]*f+3,rg.c[1]*f,rg.c[2]*f+7);
+      let col=null;if(q>coat.patchHi)col=coat.patches[0];else if(q<coat.patchLo)col=coat.patches[1];
       if(!col)return;
-      const nm=normalAt(S,i).n,o=(vnoise(rg.c[0]*.2,rg.c[1]*.2,5)-.5)*R[i]*.8;
-      c.fillStyle=cssc(col);c.beginPath();c.arc(S[i][0]+nm[0]*o,S[i][1]+nm[1]*o,R[i]*.95,0,7);c.fill();
+      if(part.tagAt&&((i+.5)/n>.72))return;                                  // 腳掌保持白色
+      const nm=normalAt(S,i).n,o=(vnoise(rg.c[0]*.14,rg.c[1]*.14,5)-.5)*R[i]*.7;
+      c.fillStyle=cssc(col);c.beginPath();c.arc(S[i][0]+nm[0]*o,S[i][1]+nm[1]*o,R[i]*1.12,0,7);c.fill();
     });
   }
   // 白色胸口
   if(coat.chestWhite&&tag==='body'){
-    const off=cam.lin([.6,-.8,0]);
+    const off=cam.lin([.6,-.8,0]),bp=new Path2D();
     rings.forEach((rg,i)=>{
       if(rg.c[0]<7)return;
-      c.fillStyle=cssc(coat.light);c.beginPath();c.arc(S[i][0]+off[0]*R[i]*.5,S[i][1]+off[1]*R[i]*.5,R[i]*.72,0,7);c.fill();
+      const cx=S[i][0]+off[0]*R[i]*.5,cy=S[i][1]+off[1]*R[i]*.5;bp.moveTo(cx+R[i]*.72,cy);bp.arc(cx,cy,R[i]*.72,0,Math.PI*2);
     });
-  }
-  // 腹部偏淺
-  if(coat.light&&!coat.dark&&(tag==='body')&&(coat.chestWhite||coat.tabby)){
-    const bp=new Path2D();
-    rings.forEach((rg,i)=>{
-      const nm=normalAt(S,i).n,cx=S[i][0]-nm[0]*R[i]*.85,cy=S[i][1]-nm[1]*R[i]*.85;
-      bp.moveTo(cx+R[i]*.62,cy);bp.arc(cx,cy,R[i]*.62,0,Math.PI*2);
-    });
-    c.fillStyle=cssc(coat.light,1,.4);c.fill(bp);
+    c.fillStyle=cssc(coat.light);c.fill(bp);
   }
   // 虎斑條紋:兩端漸細
   if(coat.tabby){
-    c.fillStyle=cssc(coat.stripe,1,.92);
+    c.fillStyle=cssc(coat.stripe);
     rings.forEach((rg,i)=>{
       const nt=normalAt(S,i),nm=nt.n,r=R[i],u=(i+.5)/n,P=S[i];
       if(tag==='body'&&i%2===1&&i>1&&i<n-2&&rg.c[0]<15){
-        taper(c,[P[0]+nm[0]*r*1.25,P[1]+nm[1]*r*1.25],[P[0]-nm[0]*r*.15,P[1]-nm[1]*r*.15],1.9+(i%3)*.3,(i%2?1:-1)*r*.25);
+        taper(c,[P[0]+nm[0]*r*1.25,P[1]+nm[1]*r*1.25],[P[0]-nm[0]*r*.1,P[1]-nm[1]*r*.1],2.1+(i%3)*.3,(i%2?1:-1)*r*.25);
       }else if(tag==='tail'&&i>0){
-        if(i%2===0){taper(c,[P[0]+nm[0]*r*1.2,P[1]+nm[1]*r*1.2],[P[0]-nm[0]*r*1.2,P[1]-nm[1]*r*1.2],1.7,0);}
-        if(i>=n-3){c.beginPath();c.arc(P[0],P[1],r*1.05,0,7);c.fill();}
+        if(i%2===0)taper(c,[P[0]+nm[0]*r*1.2,P[1]+nm[1]*r*1.2],[P[0]-nm[0]*r*1.2,P[1]-nm[1]*r*1.2],1.9,0);
       }else if(part.tagAt&&u>.2&&u<.55&&i%4===2){
-        taper(c,[P[0]+nm[0]*r*1.15,P[1]+nm[1]*r*1.15],[P[0]-nm[0]*r*.5,P[1]-nm[1]*r*.5],1.4,r*.15);
+        taper(c,[P[0]+nm[0]*r*1.15,P[1]+nm[1]*r*1.15],[P[0]-nm[0]*r*.5,P[1]-nm[1]*r*.5],1.5,r*.15);
       }
     });
+  }
+  // 尾巴尖端:虎斑用條紋色、三花等用 tailTip,畫成連續的形狀
+  if(tag==='tail'&&(coat.tailTip||coat.tabby)){
+    const tp=new Path2D();
+    for(let i=Math.max(0,n-4);i<n-1;i++)hull(tp,S[i],R[i]+.3,S[i+1],R[i+1]+.3);
+    c.fillStyle=cssc(coat.tailTip||coat.stripe);c.fill(tp);
   }
 }
 
@@ -329,19 +306,28 @@ function drawEars(c,cam,head,coat){
     const bx=-2.6,by=6.0,bz=s*5.2;
     const fo=[bx+4.6,by,bz+4.4*s],fi=[bx+4.6,by,bz-4.4*s],bo=[bx-4.4,by,bz+4.8*s],bi=[bx-4.4,by,bz-4.8*s],A=[bx-.4,by+11.2,bz+2.4*s];
     const pr=[fo,fi,bo,bi,A].map(p=>cam.P(T(p))),h=hullPts(pr);
-    c.lineJoin='round';c.lineWidth=OUT_W*2;c.strokeStyle=cssc(coat.ink,1,.92);c.fillStyle=cssc(coat.base);
+    c.lineJoin='round';c.lineWidth=OUT_W*2;c.strokeStyle=cssc(coat.line);c.fillStyle=cssc(coat.base);
     const path=new Path2D();h.forEach((p,i)=>i?path.lineTo(p[0],p[1]):path.moveTo(p[0],p[1]));path.closePath();
     c.stroke(path);c.fill(path);
-    const tip=cam.P(T(A));
-    if(coat.tabby||coat.dark){c.save();c.clip(path);c.fillStyle=cssc(coat.tabby?coat.stripe:coat.ink,1,.55);c.beginPath();c.arc(tip[0],tip[1],3.2,0,7);c.fill();c.restore();}
+    if(coat.patches&&vnoise(s*3+1,2,4)>.5){c.save();c.clip(path);c.fillStyle=cssc(coat.patches[0]);c.fill(path);c.restore();}
     if(V.dot(R([1,.35,0]),cam.view)>.05){
-      const a=cam.P(T(fo)),b=cam.P(T(fi)),t=cam.P(T(A)),m=[(a[0]+b[0]+t[0])/3,(a[1]+b[1]+t[1])/3],k=.66;
+      const a=cam.P(T(fo)),b=cam.P(T(fi)),t=cam.P(T(A)),m=[(a[0]+b[0]+t[0])/3,(a[1]+b[1]+t[1])/3],k=.6;
       const q=[a,b,t].map(p=>[m[0]+(p[0]-m[0])*k,m[1]+(p[1]-m[1])*k]);
-      c.fillStyle='rgb(236,148,160)';c.beginPath();q.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.closePath();c.fill();
-      c.strokeStyle='rgba(255,246,238,.85)';c.lineWidth=.55;c.lineCap='round';
-      [-.3,0,.3].forEach(o=>{const x=m[0]+(t[0]-m[0])*.05+(b[0]-a[0])*o*.5,y=m[1]+(b[1]-a[1])*o*.5+2;c.beginPath();c.moveTo(x,y+2.2);c.lineTo(x+(t[0]-m[0])*.4,y+(t[1]-m[1])*.5);c.stroke();});
+      c.fillStyle='rgb(240,170,180)';c.beginPath();q.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.closePath();c.fill();
     }
   });
+}
+function drawEye(c,coat,p,rx,ry,tilt,blink){
+  c.save();c.translate(p[0],p[1]);c.rotate(tilt);
+  if(blink<.5){
+    c.strokeStyle=cssc(coat.line,.6);c.lineWidth=.8;c.lineCap='round';
+    c.beginPath();c.moveTo(-rx,0);c.quadraticCurveTo(0,ry*.7,rx,0);c.stroke();c.restore();return;
+  }
+  c.fillStyle=cssc(coat.eye);c.beginPath();c.ellipse(0,0,rx,ry,0,0,7);c.fill();
+  c.fillStyle='rgb(28,20,22)';c.beginPath();c.ellipse(0,0,rx*.26,ry*.92,0,0,7);c.fill();
+  c.fillStyle='rgba(255,255,255,.95)';c.beginPath();c.arc(-rx*.3,-ry*.36,rx*.2,0,7);c.fill();
+  c.strokeStyle=cssc(coat.line,.55);c.lineWidth=.55;c.beginPath();c.ellipse(0,0,rx,ry,0,Math.PI*1.05,Math.PI*1.95);c.stroke();
+  c.restore();
 }
 function headHalfWidth(x,y){
   let i=0;while(i<HEAD_X.length-2&&x>HEAD_X[i+1])i++;
@@ -350,89 +336,61 @@ function headHalfWidth(x,y){
   const yc=HEAD_Y[i]+(HEAD_Y[i+1]-HEAD_Y[i])*t,h=(y-yc)/a;
   return b*Math.sqrt(Math.max(0,1-h*h));
 }
-function drawEye(c,coat,p,rx,ry,tilt,blink){
-  c.save();c.translate(p[0],p[1]);c.rotate(tilt);
-  const almond=()=>{
-    c.beginPath();c.moveTo(-rx,ry*.15);
-    c.quadraticCurveTo(-rx*.15,-ry*1.25,rx,-ry*.2);
-    c.quadraticCurveTo(rx*.1,ry*1.05,-rx,ry*.15);c.closePath();
-  };
-  if(blink<.5){
-    c.strokeStyle=cssc(coat.ink);c.lineWidth=.9;c.lineCap='round';
-    c.beginPath();c.moveTo(-rx,ry*.1);c.quadraticCurveTo(0,ry*.7,rx,-ry*.2);c.stroke();c.restore();return;
-  }
-  almond();c.fillStyle='rgb(250,244,226)';c.fill();
-  c.save();almond();c.clip();
-  const g=c.createRadialGradient(0,-ry*.15,0,0,0,rx*1.05);
-  g.addColorStop(0,cssc(coat.eye,1.25));g.addColorStop(.6,cssc(coat.eye,1));g.addColorStop(1,cssc(coat.eye,.55));
-  c.fillStyle=g;c.beginPath();c.ellipse(rx*.05,0,rx*.82,ry*1.1,0,0,7);c.fill();
-  c.fillStyle='rgb(24,16,18)';c.beginPath();c.ellipse(rx*.05,0,rx*.24*(1.3-.6*Math.min(1,blink)),ry*.98,0,0,7);c.fill();
-  c.fillStyle='rgba(0,0,0,.28)';c.beginPath();c.rect(-rx*1.2,-ry*1.3,rx*2.6,ry*.55);c.fill();   // 上眼皮的陰影
-  c.fillStyle='rgba(255,255,255,.95)';c.beginPath();c.arc(-rx*.25,-ry*.4,rx*.2,0,7);c.fill();
-  c.beginPath();c.arc(rx*.35,ry*.35,rx*.09,0,7);c.fill();
-  c.restore();
-  almond();c.strokeStyle=cssc(coat.ink);c.lineWidth=.8;c.lineJoin='round';c.stroke();
-  c.restore();
-}
 function drawFace(c,cam,head,coat){
   const T=head.T,R=head.R,view=cam.view,pj=p=>cam.P(T(p)),sc=head.sc;
   const vis=n=>V.dot(R(n),view),dark=!!coat.dark;
   const TIP=HEAD_X[HEAD_X.length-1];
-  // 口鼻的墊
-  [-1,1].forEach(s=>{
-    const k=vis([.7,-.1,s*.7]);if(k<-.05)return;
-    const p=pj([TIP-2.3,-2.5,s*1.8]),r=2.8*sc*(.6+.4*Math.min(1,k+.3));
-    c.fillStyle=cssc(coat.muzzleWhite?coat.light:mixc(coat.base,coat.light,.55));c.beginPath();c.arc(p[0],p[1],r,0,7);c.fill();
-  });
+  // 口鼻的白色墊
+  if(coat.muzzleWhite){
+    [-1,1].forEach(s=>{
+      const k=vis([.7,-.1,s*.7]);if(k<-.05)return;
+      const p=pj([TIP-2.3,-2.5,s*1.8]),r=2.8*sc*(.6+.4*Math.min(1,k+.3));
+      c.fillStyle=cssc(coat.light);c.beginPath();c.arc(p[0],p[1],r,0,7);c.fill();
+    });
+  }
   // 額頭與臉頰的虎斑
   if(coat.tabby){
-    c.fillStyle=cssc(coat.stripe,1,.9);
+    c.fillStyle=cssc(coat.stripe);
     if(vis([.45,.85,0])>.08){
-      [[[TIP-4.8,5.6,0],[TIP-8,9.2,0],0],[[TIP-5.2,5.0,2.8],[TIP-8.4,8.4,3.9],.6],[[TIP-5.2,5.0,-2.8],[TIP-8.4,8.4,-3.9],-.6]].forEach(([a,b,bd])=>{
-        taper(c,pj(a),pj(b),1.5*sc,bd);});
+      [[[TIP-4.8,5.6,0],[TIP-8,9.2,0],0],[[TIP-5.2,5.0,2.8],[TIP-8.4,8.4,3.9],.6],[[TIP-5.2,5.0,-2.8],[TIP-8.4,8.4,-3.9],-.6]].forEach(([a,b,bd])=>taper(c,pj(a),pj(b),1.6*sc,bd));
     }
     [-1,1].forEach(s=>{
       if(vis([.25,0,s*.95])<.2)return;
-      [[[TIP-8,-.4,s*8.4],[TIP-10.6,-1.7,s*9.2]],[[TIP-7.6,-2.2,s*8],[TIP-9.8,-3.3,s*8.8]]].forEach(([a,b])=>taper(c,pj(a),pj(b),1.3*sc,0));
+      [[[TIP-8,-.4,s*8.4],[TIP-10.6,-1.7,s*9.2]],[[TIP-7.6,-2.2,s*8],[TIP-9.8,-3.3,s*8.8]]].forEach(([a,b])=>taper(c,pj(a),pj(b),1.4*sc,0));
     });
+    if(view[0]<-.3)[[-4,8.6,0],[-3.6,8.2,-3.6],[-3.6,8.2,3.6]].forEach(([x,y,z])=>taper(c,pj([x,y,z]),pj([x+3.2,y-3.8,z]),1.7*sc,0));
   }
-  if(view[0]<-.3&&coat.tabby){
-    c.fillStyle=cssc(coat.stripe,1,.9);
-    [[-4,8.6,0],[-3.6,8.2,-3.6],[-3.6,8.2,3.6]].forEach(([x,y,z])=>taper(c,pj([x,y,z]),pj([x+3.2,y-3.8,z]),1.6*sc,0));
-  }
-  // 眼睛
+  // 眼睛:小小的、圓圓的
   [-1,1].forEach(s=>{
     const k=vis([.5,.08,s*.86]);if(k<.1)return;
     const ex=4.5,ey=1.2,ez=s*(headHalfWidth(ex,ey)*.97);
-    const p=pj([ex,ey,ez]),rx=3.0*sc*Math.max(.72,Math.min(1,k*1.6)),ry=2.7*sc;
-    drawEye(c,coat,p,rx,ry*Math.max(.16,head.blink),-s*.16*(view[0]>.3?1:0)+ (view[0]>.3?0:-.05),head.blink);
+    const p=pj([ex,ey,ez]),rx=2.7*sc*Math.max(.72,Math.min(1,k*1.6)),ry=2.75*sc*Math.max(.16,head.blink);
+    drawEye(c,coat,p,rx,ry,0,head.blink);
   });
   // 鼻子與嘴
   if(vis([1,0,0])>-.35){
-    const p=pj([TIP-.1,-1.4,0]),w=1.7*sc*(.65+.35*Math.abs(view[0])+.3*Math.abs(view[2])),h=1.4*sc;
-    const g=c.createLinearGradient(0,p[1]-h,0,p[1]+h);g.addColorStop(0,cssc(coat.nose,1.1));g.addColorStop(1,cssc(coat.nose,.78));
-    c.fillStyle=g;c.strokeStyle=cssc(coat.ink,1,.8);c.lineWidth=.6;c.lineJoin='round';
-    c.beginPath();c.moveTo(p[0]-w,p[1]-h*.5);c.quadraticCurveTo(p[0],p[1]-h*.95,p[0]+w,p[1]-h*.5);c.quadraticCurveTo(p[0]+w*.45,p[1]+h*.85,p[0],p[1]+h);c.quadraticCurveTo(p[0]-w*.45,p[1]+h*.85,p[0]-w,p[1]-h*.5);c.closePath();c.fill();c.stroke();
-    c.fillStyle='rgba(40,15,20,.55)';c.beginPath();c.ellipse(p[0]-w*.35,p[1]-h*.1,w*.16,h*.14,0,0,7);c.ellipse(p[0]+w*.35,p[1]-h*.1,w*.16,h*.14,0,0,7);c.fill();
+    const p=pj([TIP-.1,-1.4,0]),w=1.5*sc*(.65+.35*Math.abs(view[0])+.3*Math.abs(view[2])),h=1.2*sc;
+    c.fillStyle=cssc(coat.nose);
+    c.beginPath();c.moveTo(p[0]-w,p[1]-h*.5);c.quadraticCurveTo(p[0],p[1]-h*.9,p[0]+w,p[1]-h*.5);c.quadraticCurveTo(p[0]+w*.4,p[1]+h*.8,p[0],p[1]+h);c.quadraticCurveTo(p[0]-w*.4,p[1]+h*.8,p[0]-w,p[1]-h*.5);c.closePath();c.fill();
     if(view[0]>.25){
-      const m0=pj([TIP-.4,-2.3,0]),m1=pj([TIP-.9,-3.6,0]),ml=pj([TIP-1.7,-3.9,-1.9]),mr=pj([TIP-1.7,-3.9,1.9]);
-      c.strokeStyle=cssc(coat.ink,1,.8);c.lineWidth=.6;c.lineCap='round';c.beginPath();c.moveTo(m0[0],m0[1]);c.lineTo(m1[0],m1[1]);
-      c.moveTo(ml[0],ml[1]);c.quadraticCurveTo(m1[0],m1[1]+1.1,mr[0],mr[1]);c.stroke();
+      const m0=pj([TIP-.4,-2.3,0]),m1=pj([TIP-.9,-3.5,0]),ml=pj([TIP-1.7,-3.8,-1.9]),mr=pj([TIP-1.7,-3.8,1.9]);
+      c.strokeStyle=cssc(coat.line,.7);c.lineWidth=.55;c.lineCap='round';c.beginPath();c.moveTo(m0[0],m0[1]);c.lineTo(m1[0],m1[1]);
+      c.moveTo(ml[0],ml[1]);c.quadraticCurveTo(m1[0],m1[1]+1,mr[0],mr[1]);c.stroke();
     }
   }
-  // 鬍鬚:從口鼻往後方展開
-  c.lineCap='round';c.lineWidth=.55;c.strokeStyle=dark?'rgba(255,255,255,.7)':cssc(coat.ink,1,.5);
+  // 鬍鬚:細細的,往後方展開
+  c.lineCap='round';c.lineWidth=.45;c.strokeStyle=dark?'rgba(255,255,255,.6)':cssc(coat.line,.9,.5);
   [-1,1].forEach(s=>{
     if(vis([.4,0,s*.9])<-.05)return;
-    [2.4,.2,-2.2].forEach(dy=>{
-      const a=pj([TIP-1.6,-2.4,s*3.4]),b=pj([TIP-6,-2.4+dy,s*12.4]),m=pj([TIP-3.6,-2.2+dy*.4,s*8]);
-      c.beginPath();c.moveTo(a[0],a[1]);c.quadraticCurveTo(m[0],m[1]-.8,b[0],b[1]);c.stroke();
+    [2.2,-.2,-2.4].forEach(dy=>{
+      const a=pj([TIP-1.6,-2.4,s*3.4]),b=pj([TIP-6,-2.4+dy,s*11.6]),m=pj([TIP-3.6,-2.2+dy*.4,s*7.6]);
+      c.beginPath();c.moveTo(a[0],a[1]);c.quadraticCurveTo(m[0],m[1]-.6,b[0],b[1]);c.stroke();
     });
   });
 }
-function drawHead(c,cam,head,coat,seed){
+function drawHead(c,cam,head,coat){
   drawEars(c,cam,head,coat);
-  drawChain(c,cam,head,coat,seed);
+  drawChain(c,cam,head,coat);
   drawFace(c,cam,head,coat);
 }
 
@@ -453,8 +411,11 @@ function drawCat(c,o){
     let d=0;p.rings.forEach(r=>{d+=cam.depth(r.c);});
     return{p,k:d/p.rings.length+(p.bias||0)};
   }).sort((a,b)=>a.k-b.k);
+  // 遠側的肢體(比身體更遠)用稍深的同色,和近側區分開
+  const body=items.find(it=>it.p.tag==='body'),bk=body?body.k:0;
+  items.forEach(it=>{const p=it.p;if((p.tagAt||p.tag==='tail')&&it.k<bk-1.5)p.shade=.9;});
   c.save();c.lineJoin='round';
-  items.forEach((it,idx)=>{const sd=rig.parts.indexOf(it.p)+1;if(it.p.kind==='head')drawHead(c,cam,it.p,coat,sd);else drawChain(c,cam,it.p,coat,sd);});
+  items.forEach(it=>{if(it.p.kind==='head')drawHead(c,cam,it.p,coat);else drawChain(c,cam,it.p,coat);});
   c.restore();
 }
 

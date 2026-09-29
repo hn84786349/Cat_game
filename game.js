@@ -750,109 +750,66 @@ function renderScene(c,v,scene,agent,coat,t){
   paint(list);
 }
 
-/* ---- main.js ---- */
+/* ---- play.js ---- */
 'use strict';
-/* 預覽頁:花色切換、走路/坐下 × 4 方向 × 2 視角,可匯出 PNG 圖集 */
-const CW=220,CH=230,DPR=2,SC=1.5,PITCHES=[{p:30,n:'高俯角 30°'},{p:6,n:'近距離'}];
-let coatKey='orange';
-const cards=[];
-const wrap=document.getElementById('grid'),bar=document.getElementById('coats');
-
-Object.entries(COATS).forEach(([k,v])=>{
-  const b=document.createElement('button');b.textContent=v.name;b.dataset.k=k;
-  b.onclick=()=>{coatKey=k;[...bar.children].forEach(x=>x.classList.toggle('on',x.dataset.k===k));};
-  bar.appendChild(b);
-});
-bar.children[0].classList.add('on');
-
-PITCHES.forEach(pt=>{
-  const h=document.createElement('h2');h.textContent=pt.n;wrap.appendChild(h);
-  const g=document.createElement('div');g.className='g';wrap.appendChild(g);
-  CAT_POSES.forEach(po=>{
-    const d=document.createElement('div');d.className='card';
-    d.innerHTML=`<canvas width="${CW*DPR}" height="${CH*DPR}"></canvas><div class="t"><b>${po.act==='walk'?'走路':'坐下'}・${CAT_LABEL[po.dir]}</b></div>`;
-    g.appendChild(d);
-    cards.push({...po,pitch:pt.p,c:d.querySelector('canvas').getContext('2d')});
-  });
-});
-
-function backdrop(c,pitch){
-  const sn=Math.sin(pitch*Math.PI/180),oy=CH-34;
-  c.fillStyle='#d9eef7';c.fillRect(0,0,CW,CH);
-  const yh=oy-Math.max(12,120*sn);
-  c.fillStyle='#8ed05e';c.fillRect(0,yh,CW,CH-yh);
-  const th=Math.max(6,40*sn);
-  for(let r=0,y=yh;y<CH;r++,y+=th)for(let x=0,i=0;x<CW;x+=40,i++){c.fillStyle=(i+r)%2?'#8ed05e':'#98dc68';c.fillRect(x,y,41,th+1);}
-  c.fillStyle='rgba(30,70,20,.25)';c.beginPath();c.ellipse(CW/2,oy,38*SC,Math.max(3,14*sn*SC),0,0,7);c.fill();
-}
-function frame(ms){
-  const t=ms/1000;BL=(t%3.6)<.14?.15:1;
-  cards.forEach(k=>{
-    const c=k.c;c.setTransform(DPR,0,0,DPR,0,0);
-    backdrop(c,k.pitch);
-    c.save();c.translate(CW/2,CH-34);c.scale(SC,SC);
-    drawCat(c,{dir:k.dir,act:k.act,pitch:k.pitch,t,coat:coatKey});
-    c.restore();
-  });
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
-
-/* 匯出透明背景圖集:每列 = 視角×動作×方向,走路 8 格、坐下 4 格 */
-function exportSheet(key){
-  const CELL_W=320,CELL_H=300,S=2,rows=[];
-  PITCHES.forEach(pt=>CAT_POSES.forEach(po=>rows.push({...po,pitch:pt.p})));
-  const cols=8,cv=document.createElement('canvas');cv.width=cols*CELL_W;cv.height=rows.length*CELL_H;
-  const c=cv.getContext('2d');BL=1;
-  rows.forEach((r,ri)=>{
-    const n=r.act==='walk'?8:4;
-    for(let i=0;i<n;i++){
-      c.save();c.translate(i*CELL_W+CELL_W/2,ri*CELL_H+CELL_H-40);c.scale(S,S);
-      const t=r.act==='walk'?(i/8)*Math.PI*2/6:(i/4)*Math.PI*2/2.5;
-      drawCat(c,{dir:r.dir,act:r.act,pitch:r.pitch,t,coat:key});
-      c.restore();
-    }
-  });
-  const a=document.createElement('a');a.href=cv.toDataURL('image/png');a.download=`cat_${key}_sheet.png`;a.click();
-  return {w:cv.width,h:cv.height,rows:rows.length};
-}
-document.getElementById('exp').onclick=()=>exportSheet(coatKey);
-
-/* ---- demo.js ---- */
-'use strict';
-/* 場景示範:切換場景、縮放(距離綁定俯角)、點擊讓貓走過去 */
+/* 遊戲頁:切換場景與花色、縮放(距離綁定俯角)、點擊或觸控讓貓走過去。偏好會記在瀏覽器裡。 */
 (function(){
-const cv=document.getElementById('demo'),c=cv.getContext('2d'),dist=document.getElementById('dist'),info=document.getElementById('info');
-const bar=document.getElementById('scenes'),autoBtn=document.getElementById('auto');
+const cv=document.getElementById('stage'),c=cv.getContext('2d'),dist=document.getElementById('dist'),info=document.getElementById('info');
+const barS=document.getElementById('scenes'),barC=document.getElementById('coats'),autoBtn=document.getElementById('auto');
 const view=View.create(cv.width,cv.height);
-let scene=SCENES.indoor,agent=CatAgent.create(scene),tPrev=0;
+const store={
+  get(k,d){try{return localStorage.getItem('catHouse.'+k)||d;}catch(e){return d;}},
+  set(k,v){try{localStorage.setItem('catHouse.'+k,v);}catch(e){}},
+};
+let scene=SCENES[store.get('scene','indoor')]||SCENES.indoor,coatKey=store.get('coat','orange');
+if(!COATS[coatKey])coatKey='orange';
+let agent=CatAgent.create(scene),tPrev=0;
 
+function mark(bar,test){[...bar.children].forEach(b=>b.classList.toggle('on',test(b)));}
 Object.values(SCENES).forEach(s=>{
   const b=document.createElement('button');b.textContent=s.name;b.dataset.id=s.id;
-  b.onclick=()=>{scene=s;agent=CatAgent.create(s);agent.auto=autoBtn.classList.contains('on');[...bar.children].forEach(x=>x.classList.toggle('on',x===b));};
-  bar.appendChild(b);
+  b.onclick=()=>{scene=s;agent=CatAgent.create(s);agent.auto=autoBtn.classList.contains('on');store.set('scene',s.id);mark(barS,x=>x===b);};
+  barS.appendChild(b);
 });
-bar.children[0].classList.add('on');
-autoBtn.onclick=()=>{autoBtn.classList.toggle('on');agent.auto=autoBtn.classList.contains('on');autoBtn.textContent='自動漫遊:'+(agent.auto?'開':'關');};
+mark(barS,b=>b.dataset.id===scene.id);
+Object.entries(COATS).forEach(([k,v])=>{
+  const b=document.createElement('button');b.className='chip';b.dataset.k=k;
+  b.innerHTML=`<span class="dot" style="background:${v.o[1]}"></span>${v.name}`;
+  b.onclick=()=>{coatKey=k;store.set('coat',k);mark(barC,x=>x===b);};
+  barC.appendChild(b);
+});
+mark(barC,b=>b.dataset.k===coatKey);
+autoBtn.onclick=()=>{
+  autoBtn.classList.toggle('on');agent.auto=autoBtn.classList.contains('on');
+  autoBtn.textContent='自動漫遊:'+(agent.auto?'開':'關');
+};
 
+function toCanvas(cx,cy){const r=cv.getBoundingClientRect();return[(cx-r.left)*cv.width/r.width,(cy-r.top)*cv.height/r.height];}
 cv.addEventListener('click',e=>{
-  const r=cv.getBoundingClientRect(),sx=(e.clientX-r.left)*cv.width/r.width,sy=(e.clientY-r.top)*cv.height/r.height;
-  const g=View.unproject(view,sx,sy);CatAgent.goTo(agent,scene,g.x,g.d);
+  const[sx,sy]=toCanvas(e.clientX,e.clientY),g=View.unproject(view,sx,sy);
+  CatAgent.goTo(agent,scene,g.x,g.d);
 });
 cv.addEventListener('wheel',e=>{
   e.preventDefault();dist.value=Math.min(100,Math.max(0,+dist.value+(e.deltaY>0?6:-6)));
 },{passive:false});
+// 兩指縮放:手指張開 = 拉近
+let pinch=null;
+const span=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+cv.addEventListener('touchstart',e=>{if(e.touches.length===2)pinch={s:span(e.touches),v:+dist.value};},{passive:true});
+cv.addEventListener('touchmove',e=>{
+  if(pinch&&e.touches.length===2){e.preventDefault();dist.value=Math.min(100,Math.max(0,pinch.v*pinch.s/span(e.touches)));}
+},{passive:false});
+cv.addEventListener('touchend',e=>{if(e.touches.length<2)pinch=null;},{passive:true});
 
 function frame(ms){
   const t=ms/1000,dt=Math.min(.05,t-tPrev);tPrev=t;
   BL=(t%3.6)<.14?.15:1;
   CatAgent.update(agent,scene,dt);
-  const d=dist.value/100,k=1-d;                 // 越近越跟著貓,越遠越看整個場景
+  const d=dist.value/100,k=1-d;              // 越近越跟著貓,越遠越看整個場景
   const focus={x:scene.center.x+(agent.x-scene.center.x)*k,d:scene.center.d+(agent.d-scene.center.d)*k};
   View.update(view,d,focus,scene.kp);
   renderScene(c,view,scene,agent,coatKey,t);
-  const w=CameraRules.catSprite(d);
-  info.textContent=`${scene.name}・距離 ${d.toFixed(2)}・場景俯角 ${view.pitch.toFixed(0)}°・貓圖:高俯角 ${(w.high*100).toFixed(0)}% / 近距離 ${(w.close*100).toFixed(0)}%`;
+  info.textContent=`${scene.name}・場景俯角 ${view.pitch.toFixed(0)}°・${CameraRules.catSprite(d).close>.5?'近距離':'遠景'}視角`;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

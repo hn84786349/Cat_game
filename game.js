@@ -209,6 +209,36 @@ function tuxedoMarks(T,pose){
   else if(pose==='frontSit')sock(-bw*.2,bw*.2,44);
   else if(pose!=='backSit')T.feet.forEach(f=>sock(f[0],f[1],60));   // 走路:每隻腳都是白腳掌
 }
+/* 三花、乳牛:所有動作用同一套花紋——頭頂與耳朵一塊、背上兩塊斑、尾巴、尾尖。
+   位置依各姿勢手動標定(參考圖的座標,腳底中心為原點)。
+   三花:頭頂橘、背上一橘一黑、尾巴橘、尾尖黑。乳牛:頭頂黑、背上兩塊黑、尾巴黑。 */
+const e=(x,y,rx,ry)=>['e',x,y,rx,ry],rr=(x0,y0,x1,y1)=>['r',x0,y0,x1,y1];
+const MARKS={
+  sideSit:{cap:e(120,-505,100,60),spots:[e(-30,-300,55,45),e(-110,-160,45,55)],tailPo:rr(-175,-60,60,0),tip:e(-160,-22,26,22)},
+  sideSitL:{cap:e(-101,-505,100,60),spots:[e(49,-300,55,45),e(129,-160,45,55)],tailPo:rr(-41,-60,194,0),tip:e(179,-22,26,22)},
+  sideWalk:{cap:e(-240,-420,90,55),spots:[e(-110,-300,55,40),e(60,-320,75,45)],tailPo:rr(262,-260,400,-80),tip:e(355,-110,30,25)},
+  backSit:{cap:e(-47,-545,100,65),spots:[e(-100,-270,45,40),e(40,-200,50,45)],tail:[e(100,-35,60,38)],tip:e(125,-30,20,18)},
+  frontSit:{cap:e(-55,-520,100,55),spots:[e(-165,-250,35,50),e(75,-280,30,45)],tail:[e(120,-35,50,34)],tip:e(145,-30,22,20)},
+  frontStand:{cap:e(-5,-525,95,50),spots:[e(-75,-260,30,45),e(60,-200,28,40)],tail:[rr(-30,-650,20,-500)],tip:e(-5,-615,20,25)},
+  backStand:{cap:e(-55,-550,95,60),spots:[e(-75,-330,50,45),e(60,-230,50,50)],tail:[rr(40,-600,105,-430)],tip:e(72,-585,25,25)},
+};
+function shape(m){c.beginPath();if(m[0]==='e')c.ellipse(m[1],m[2],m[3],m[4],0,0,Math.PI*2);else c.rect(m[1],m[2],m[3]-m[1],m[4]-m[2]);c.fill();}
+function spotMarks(T,pose,P){
+  const M=MARKS[pose];if(!M)return;
+  const dark=cssc(K.spot[0]),light=P==='calico'?cssc(K.spot[1]):dark;
+  c.fillStyle=light;shape(M.cap);
+  c.fillStyle=light;shape(M.spots[0]);c.fillStyle=dark;shape(M.spots[1]);
+  if(M.tailPo&&T.po){
+    // 尾巴貼著身體時,用參考圖裡描出的橘色尾巴形狀(限定在尾巴的範圍內)
+    const b=M.tailPo;c.save();c.beginPath();c.rect(b[1],b[2],b[3]-b[1],b[4]-b[2]);c.clip();c.clip(tp(T.po),'evenodd');
+    c.fillStyle=light;c.fillRect(b[1],b[2],b[3]-b[1],b[4]-b[2]);
+    if(P==='calico'){c.fillStyle=dark;shape(M.tip);}
+    c.restore();
+  }else if(M.tail){
+    c.fillStyle=light;M.tail.forEach(shape);
+    if(P==='calico'){c.fillStyle=dark;shape(M.tip);}
+  }
+}
 function tracedLayers(T,pose){
   const sil=tp(T.sil);
   c.fillStyle=cssc(K.base);c.fill(sil);
@@ -216,8 +246,7 @@ function tracedLayers(T,pose){
   if(T.shade){c.fillStyle=cssc(K.base,K.farK);c.fill(tp(T.shade),'evenodd');}
   if(T.shade2){c.fillStyle=cssc(K.base,.94);c.fill(tp(T.shade2),'evenodd');}
   const P=K.pattern;
-  if(P==='calico'){if(T.po){c.fillStyle=cssc(K.spot[1]);c.fill(tp(T.po),'evenodd');}if(T.pk){c.fillStyle=cssc(K.spot[0]);c.fill(tp(T.pk),'evenodd');}}
-  if(P==='cow'&&T.pk){c.fillStyle=cssc(K.spot[0]);c.fill(tp(T.pk),'evenodd');}
+  if(P==='calico'||P==='cow')spotMarks(T,pose,P);
   if(P==='tuxedo'){c.fillStyle=cssc(K.spot[0]);tuxedoMarks(T,pose);}
   c.restore();
   // 臉
@@ -279,7 +308,7 @@ const PATTERNS={
   },
   cow:{
     back:{head:[['M380,240 L560,240 L560,330 C520,320 480,330 460,350 C430,320 400,320 380,330 Z',0]],earL:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earR:[['M0,0 L999,0 L999,999 L0,999 Z',0]],body:[[E(470,490,70,60),0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',0]]},
-    sleep:{head:[['M200,420 L460,420 L460,520 C420,500 380,510 340,540 C300,500 240,500 200,520 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,body:[[E(560,450,110,70),0]],tail:[[E(740,600,40,30),0]]},
+    sleep:{head:[['M200,420 L460,420 L460,520 C420,500 380,510 340,540 C300,500 240,500 200,520 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,body:[[E(520,440,80,55),0],[E(700,520,70,70),0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',0]]},
     sideSit:{head:[['M170,340 C200,320 250,300 300,280 L420,260 L420,420 L300,420 C290,380 270,340 240,326 C220,318 196,322 170,346 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,
       body:[['M470,352 C540,410 600,480 630,560 C590,580 540,560 500,520 C470,490 452,420 470,352 Z',0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',0]]},
     side:{head:[['M170,340 C200,320 250,300 300,280 L420,260 L420,420 L300,420 C290,380 270,340 240,326 C220,318 196,322 170,346 Z',0]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',0]],earIn:0,
@@ -290,7 +319,7 @@ const PATTERNS={
   calico:{
     back:{earL:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earR:[['M0,0 L999,0 L999,999 L0,999 Z',0]],head:[[E(420,290,60,50),1],[E(515,280,34,44),0]],
       body:[[E(420,520,60,86),0],[E(590,500,60,70),1],[E(540,470,20,20),0]],legHL:[[E(410,720,30,60),0]],legHR:[[E(620,620,20,40),0]],legF:[[E(470,760,30,24),1]],tail:[[E(596,290,30,60),1],[E(588,380,14,24),0]]},
-    sleep:{head:[[E(390,470,70,50),1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,body:[[E(560,430,90,60),1],[E(720,520,60,80),0],[E(500,560,40,30),1]],tail:[[E(720,606,40,26),0]]},
+    sleep:{head:[[E(390,470,70,50),1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,body:[[E(560,430,90,60),1],[E(720,520,60,80),0]],tail:[['M0,0 L999,0 L999,999 L0,999 Z',1],[E(745,604,26,20),0]]},
     sideSit:{head:[['M230,318 C260,290 300,272 340,272 L420,272 L420,420 L360,420 C350,390 340,350 300,330 C280,320 250,316 230,318 Z',1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,
       body:[[E(480,420,50,44),0],[E(590,560,50,60),1],[E(520,700,44,30),1]],legFN:[[E(410,640,20,56),1]],tail:[[E(760,748,24,16),0]]},
     side:{head:[['M230,318 C260,290 300,272 340,272 L420,272 L420,420 L360,420 C350,390 340,350 300,330 C280,320 250,316 230,318 Z',1]],ear:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earFar:[['M0,0 L999,0 L999,999 L0,999 Z',1]],earIn:1,

@@ -148,8 +148,9 @@ const COATS={
   tuxedo:{name:'賓士',base:K_,pattern:'tuxedo',spot:[W_,W_],eye:rgb('#6fd04a'),nose:rgb('#262424'),farK:.8,dark:true},
   cow:{name:'乳牛',base:W_,pattern:'cow',spot:[K_,K_],eye:rgb('#8fd65a'),nose:rgb('#262424'),farK:.9},
   siamese:{name:'暹羅貓',base:rgb('#f2e6d0'),pattern:'siamese',spot:[rgb('#54392c'),rgb('#74544b')],eye:rgb('#5a9ad6'),nose:rgb('#3a2a24'),farK:.9},
-  // 緬因貓:長毛、體型較大(size 放大倍率),五個參考姿勢用自己的輪廓(traced:'mc')
-  maine:{name:'緬因貓',base:rgb('#6a7280'),pattern:'maine',traced:'mc',size:1.18,spot:[rgb('#4c5462'),rgb('#8c94a2')],ear:rgb('#e89a9a'),eye:rgb('#96be5a'),nose:rgb('#e89a9a'),farK:.86},
+  // 緬因貓:長毛、體型較大(size 放大倍率),五個參考姿勢用自己的輪廓(traced:'mc');
+  // 參考圖沒有的正面、背面姿勢先借用最接近的參考姿勢(alias),不用短毛貓的共用輪廓
+  maine:{name:'緬因貓',base:rgb('#6a7280'),pattern:'maine',traced:'mc',size:1.18,alias:{frontSit:'sideSitL',frontStand:'sideSitL',backStand:'backSit'},spot:[rgb('#4c5462'),rgb('#8c94a2')],ear:rgb('#e89a9a'),eye:rgb('#96be5a'),nose:rgb('#e89a9a'),farK:.86},
   calico:{name:'三花',base:W_,pattern:'calico',spot:[K_,O_],eye:rgb('#8fc85a'),nose:rgb('#e59a7a'),farK:.9},
 };
 
@@ -332,7 +333,10 @@ function drawTraced(pose,lift){
 
 /** 影子要對準的水平位置(貓的單位):描出的姿勢依外框中心 */
 /** 有專屬輪廓的花色(緬因貓)優先用自己的姿勢,沒有的姿勢才用共用輪廓 */
-function poseOf(pose){return (K&&K.traced&&TRACED[K.traced+'_'+pose])||TRACED[pose];}
+function poseOf(pose){
+  if(K&&K.alias&&K.alias[pose])pose=K.alias[pose];              // 沒有參考圖的姿勢,借用同品種最接近的參考姿勢
+  return (K&&K.traced&&TRACED[K.traced+'_'+pose])||TRACED[pose];
+}
 ART.centerX=function(o){
   K=COATS[o.coat||'orange'];const size=K.size||1;
   const side=o.dir==='left'||o.dir==='right';

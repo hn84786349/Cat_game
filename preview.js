@@ -92,8 +92,8 @@ function tracedLayers(T,pose){
   if(T.shade){c.fillStyle=cssc(K.base,K.farK);c.fill(tp(T.shade),'evenodd');}
   if(T.shade2){c.fillStyle=cssc(K.base,.94);c.fill(tp(T.shade2),'evenodd');}
   const P=K.pattern;
-  if(P==='calico'&&pose!=='backStand'){
-    // 三花以使用者指定的參考圖花紋為準:直接用描出的橘色、黑色色塊
+  if((P==='calico'||P==='cow')&&pose!=='backStand'){
+    // 三花以使用者指定的參考圖花紋為準:直接用描出的橘色、黑色色塊;乳牛用同樣的色塊形狀,全部塗黑
     if(T.po){c.fillStyle=cssc(K.spot[1]);c.fill(tp(T.po),'evenodd');}
     if(T.pk){c.fillStyle=cssc(K.spot[0]);c.fill(tp(T.pk),'evenodd');}
   }else if(P==='calico'||P==='cow')spotMarks(T,pose,P);

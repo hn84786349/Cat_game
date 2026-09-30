@@ -36,12 +36,19 @@ const SC=.1,WALK_FPS=5;
 const TP={};const tp=d=>TP[d]||(TP[d]=new Path2D(d));
 /* 賓士:所有動作都用同一套白色部位——白口鼻、白胸口(圍兜)、四隻白腳掌,其餘全黑(尾巴也是黑的)。
    位置依各姿勢的臉(眼睛)與腳來放;沒有偵測到眼睛的側面走路用固定的位置。 */
-const TUX_FACE={sideWalk:{mx:-312,my:-318,cx:-270,cy:-262,crx:38,cry:82},lie:{mx:-190,my:-58,mrx:44,mry:30}};
+const TUX_FACE={sideWalk:{mx:-312,my:-318,cx:-270,cy:-262,crx:38,cry:82},lie:{bib:true}};
 function tuxedoMarks(T,pose){
   const ell=(x,y,rx,ry,rot=0)=>{c.beginPath();c.ellipse(x,y,rx,ry,rot,0,Math.PI*2);c.fill();};
   const sock=(x0,x1,h)=>c.fillRect(x0-6,-h,x1-x0+12,h);
   const face=TUX_FACE[pose];
-  if(face){ell(face.mx,face.my,face.mrx||30,face.mry||22);if(face.cx!==undefined)ell(face.cx,face.cy,face.crx,face.cry,-.35);}
+  if(face&&face.bib){
+    // 趴著:白色從嘴巴往下延伸到下巴、胸口,再接到前腳掌,連成一片
+    c.beginPath();c.moveTo(-232,-72);
+    c.bezierCurveTo(-222,-96,-160,-98,-148,-70);
+    c.bezierCurveTo(-140,-50,-130,-36,-110,-30);
+    c.bezierCurveTo(-110,-14,-120,0,-140,0);
+    c.lineTo(-285,0);c.bezierCurveTo(-285,-24,-250,-40,-232,-72);c.fill();
+  }else if(face){ell(face.mx,face.my,face.mrx||30,face.mry||22);if(face.cx!==undefined)ell(face.cx,face.cy,face.crx,face.cry,-.35);}
   else if(T.eyes&&T.eyes.length){
     const xs=T.eyes.map(e=>(e.b[0]+e.b[2])/2),cx=xs.reduce((a,b)=>a+b)/xs.length,ey=Math.max(...T.eyes.map(e=>e.b[3]));
     ell(cx,ey+30,46,34);                                      // 口鼻
@@ -51,7 +58,7 @@ function tuxedoMarks(T,pose){
   if(pose==='sideSit')sock(T.box[2]-bw*.34,T.box[2],44);      // 坐姿只看得到前腳掌
   else if(pose==='sideSitL')sock(T.box[0],T.box[0]+bw*.34,44);
   else if(pose==='frontSit')sock(-bw*.2,bw*.2,44);
-  else if(pose==='lie'){ell(-228,-16,62,22);ell(-160,-12,40,18);}    // 趴著:前腳掌
+  else if(pose==='lie'){}                                            // 趴著:前腳掌已包含在白色圍兜裡
   else if(pose!=='backSit')T.feet.forEach(f=>sock(f[0],f[1],60));   // 走路:每隻腳都是白腳掌
 }
 /* 三花、乳牛:所有動作用同一套花紋——頭頂與耳朵一塊、背上兩塊斑、尾巴、尾尖。

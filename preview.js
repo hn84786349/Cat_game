@@ -201,6 +201,14 @@ const PATTERNS={
   },
 };
 
+/** 影子要對準的水平位置(貓的單位):描出的姿勢依外框中心,手繪的姿勢在腳底中心 */
+ART.centerX=function(o){
+  const side=o.dir==='left'||o.dir==='right';
+  const pose=o.act==='sit'?(side?'sideSit':o.dir==='down'?'frontSit':'backSit'):o.act==='walk'&&!side?(o.dir==='down'?'frontStand':'backStand'):null;
+  if(!pose||!TRACED[pose])return 0;
+  const b=TRACED[pose].box,cx=(b[0]+b[2])/2*SC;
+  return pose==='sideSit'&&o.dir==='left'?-cx:cx;
+};
 /** 入口:在 (0,0)=腳底中心畫一隻貓 */
 ART.draw=function(ctx,o){
   c=ctx;K=COATS[o.coat||'orange'];BLINK=o.blink===undefined?1:o.blink;

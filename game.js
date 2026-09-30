@@ -13,7 +13,8 @@ const GAME_CONFIG={
     // 貓只有兩組圖:大部分距離用高俯角組,拉到最近才換近距離組
     spritePitch:{high:30,close:6},
     closeUp:{switchAt:0.15,fade:0.06},   // 距離 < switchAt 切到近距離組,fade 為淡入淡出範圍
-    scale:{near:2.2,far:0.9},            // 貓在畫面上的縮放:近大遠小
+    scale:{near:2.2,far:0.9},
+    shadow:{rx:22,rd:14},                // 腳下影子的大小(左右半徑、前後半徑,世界單位)            // 貓在畫面上的縮放:近大遠小
     coats:['orange','cream','gray','black','white','tuxedo','calico'],
   },
   view:{
@@ -333,6 +334,14 @@ const PATTERNS={
   },
 };
 
+/** 影子要對準的水平位置(貓的單位):描出的姿勢依外框中心,手繪的姿勢在腳底中心 */
+ART.centerX=function(o){
+  const side=o.dir==='left'||o.dir==='right';
+  const pose=o.act==='sit'?(side?'sideSit':o.dir==='down'?'frontSit':'backSit'):o.act==='walk'&&!side?(o.dir==='down'?'frontStand':'backStand'):null;
+  if(!pose||!TRACED[pose])return 0;
+  const b=TRACED[pose].box,cx=(b[0]+b[2])/2*SC;
+  return pose==='sideSit'&&o.dir==='left'?-cx:cx;
+};
 /** 入口:在 (0,0)=腳底中心畫一隻貓 */
 ART.draw=function(ctx,o){
   c=ctx;K=COATS[o.coat||'orange'];BLINK=o.blink===undefined?1:o.blink;
@@ -675,7 +684,7 @@ function renderScene(c,v,scene,agent,coat,t){
   // 貓的陰影:橢圓依場景俯角壓扁,和地面對得上
   const p=View.P(v,agent.x,0,agent.d),k=v.sc*View.f(v,agent.d);
   c.fillStyle='rgba(20,30,20,.28)';c.beginPath();
-  c.ellipse(p[0],p[1],36*k,Math.max(4,24*v.sn*k),0,0,7);c.fill();
+  const sh=GAME_CONFIG.cat.shadow,sx=ART.centerX({dir:agent.dir,act:agent.act})*k;c.ellipse(p[0]+sx,p[1],sh.rx*k,Math.max(3,sh.rd*v.sn*k),0,0,7);c.fill();
   // 依深度由遠到近繪製
   const list=items.filter(it=>DECOR[it.kind].layer==='prop').map(it=>({k:DECOR[it.kind].depth?DECOR[it.kind].depth(it):it.d,fn:()=>DECOR[it.kind].draw(c,v,it)}));
   list.push({k:agent.d,fn:()=>drawCatSprites(c,v,agent,coat,t)});
